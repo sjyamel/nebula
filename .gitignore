@@ -1,0 +1,15 @@
+# tauraroc writes generated C into build/ in the current working directory,
+# which is the repo root because module resolution requires compiling from here.
+build/
+build-bare*/
+*.elf
+*.ld
+
+# Compiled executables (tauraroc names them after the entry file's basename).
+*.exe
+main
+hello
+smoke_*
+
+# Renderer output.
+*.ppm

@@ -1,0 +1,244 @@
+# toolkit.layout.flex — a deliberately small flexbox subset.
+#
+# Supported: row/column direction, padding, gap, fixed width/height, and a
+# single-flag `grow` that splits leftover main-axis space evenly. Not supported,
+# on purpose: wrap, shrink, align/justify, absolute positioning, percentages.
+# Each of those is easy to add later and none of them is needed to prove the
+# interpreter drives real geometry.
+#
+# Three passes, in the order layout engines always want:
+#   build   — UiNode tree -> LayoutBox tree, resolving each class string once
+#   measure — bottom-up intrinsic sizing
+#   place   — top-down positioning and grow distribution
+
+from toolkit.ui.ast import UiNode, read_node, max_depth
+from toolkit.ui.style import Style, StyleCache, dir_col
+from string.str import Str
+
+# Placeholder text metrics. The real values come from the bitmap font once text
+# rendering exists; measuring against a fixed cell is enough for layout to be
+# correct in shape now and correct in pixels later.
+pub def glyph_w() -> int:
+    return 6
+
+pub def glyph_h() -> int:
+    return 10
+
+pub def kind_element() -> int:
+    return 0
+
+pub def kind_text() -> int:
+    return 1
+
+pub class LayoutBox:
+    pub kind:     int
+    pub tag:      str
+    pub text:     str
+    pub handler:  str
+    pub style:    Style
+    pub x:        int
+    pub y:        int
+    pub w:        int
+    pub h:        int
+    pub children: List[LayoutBox]
+
+extend LayoutBox:
+    pub def init(kind: int, tag: str, text: str, handler: str, style: Style) -> LayoutBox:
+        mut b = LayoutBox()
+        b.kind = kind
+        b.tag = tag
+        b.text = text
+        b.handler = handler
+        b.style = style
+        b.x = 0
+        b.y = 0
+        b.w = 0
+        b.h = 0
+        b.children = []
+        return b
+
+    pub def contains(self, px: int, py: int) -> bool:
+        if px < self.x:
+            return false
+        if py < self.y:
+            return false
+        if px >= self.x + self.w:
+            return false
+        if py >= self.y + self.h:
+            return false
+        return true
+
+# --- pass 1: build ---------------------------------------------------------
+# Depth is bounded here rather than trusted. A tree deep enough to overflow the
+# stack is a denial of service hosted and a dead machine bare-metal, and the
+# parser's own clamp is not sufficient once trees can be built programmatically.
+
+pub def build(node: Pointer[UiNode], cache: StyleCache, depth: int) -> LayoutBox:
+    mut n = read_node(node)
+    match n:
+        case UiNode.Element(tag, cls, handler, kids):
+            mut st = cache.resolve(cls)
+            mut box = LayoutBox.init(kind_element(), tag, "", handler, st)
+            if depth < max_depth():
+                for c in kids:
+                    box.children.append(build(c, cache, depth + 1))
+            return box
+        case UiNode.Text(cls, value):
+            mut st2 = cache.resolve(cls)
+            return LayoutBox.init(kind_text(), "text", value, "", st2)
+        case _:
+            return LayoutBox.init(kind_element(), "unknown", "", "", Style.default())
+
+# --- pass 2: measure -------------------------------------------------------
+
+pub def measure(box: LayoutBox) -> void:
+    if box.kind == kind_text():
+        mut tw = Str.len(box.text) * glyph_w()
+        mut th = glyph_h()
+        if box.style.w >= 0:
+            tw = box.style.w
+        if box.style.h >= 0:
+            th = box.style.h
+        box.w = tw
+        box.h = th
+        return
+
+    mut i = 0
+    while i < len(box.children):
+        measure(box.children[i])
+        i = i + 1
+
+    mut pad = box.style.pad
+    mut gap = box.style.gap
+    mut nkids = len(box.children)
+
+    mut main = 0
+    mut cross = 0
+    mut j = 0
+    while j < nkids:
+        mut c = box.children[j]
+        if box.style.dir == dir_col():
+            main = main + c.h
+            if c.w > cross:
+                cross = c.w
+        else:
+            main = main + c.w
+            if c.h > cross:
+                cross = c.h
+        j = j + 1
+
+    if nkids > 1:
+        main = main + gap * (nkids - 1)
+
+    mut content_w = cross
+    mut content_h = main
+    if box.style.dir != dir_col():
+        content_w = main
+        content_h = cross
+
+    if box.style.w >= 0:
+        box.w = box.style.w
+    else:
+        box.w = content_w + pad * 2
+
+    if box.style.h >= 0:
+        box.h = box.style.h
+    else:
+        box.h = content_h + pad * 2
+
+# --- pass 3: place ---------------------------------------------------------
+
+pub def place(box: LayoutBox, x: int, y: int) -> void:
+    box.x = x
+    box.y = y
+
+    mut nkids = len(box.children)
+    if nkids == 0:
+        return
+
+    mut pad = box.style.pad
+    mut gap = box.style.gap
+    mut is_col = box.style.dir == dir_col()
+
+    # Leftover main-axis space inside the content box, split evenly across the
+    # children that asked to grow.
+    mut inner_main = box.h - pad * 2
+    if not is_col:
+        inner_main = box.w - pad * 2
+
+    mut used = 0
+    mut growers = 0
+    mut i = 0
+    while i < nkids:
+        mut c = box.children[i]
+        if is_col:
+            used = used + c.h
+        else:
+            used = used + c.w
+        if c.style.grow > 0:
+            growers = growers + 1
+        i = i + 1
+
+    if nkids > 1:
+        used = used + gap * (nkids - 1)
+
+    mut extra = 0
+    if growers > 0:
+        if inner_main > used:
+            extra = (inner_main - used) / growers
+
+    mut cursor_x = box.x + pad
+    mut cursor_y = box.y + pad
+    mut k = 0
+    while k < nkids:
+        mut c2 = box.children[k]
+
+        if c2.style.grow > 0:
+            if is_col:
+                c2.h = c2.h + extra
+            else:
+                c2.w = c2.w + extra
+
+        # Cross-axis stretch: a child with no explicit cross size fills the
+        # parent's content box. This is flex-start on main, stretch on cross.
+        if is_col:
+            if c2.style.w < 0:
+                c2.w = box.w - pad * 2
+        else:
+            if c2.style.h < 0:
+                c2.h = box.h - pad * 2
+
+        place(c2, cursor_x, cursor_y)
+
+        if is_col:
+            cursor_y = cursor_y + c2.h + gap
+        else:
+            cursor_x = cursor_x + c2.w + gap
+        k = k + 1
+
+# Convenience: the whole pipeline against a viewport.
+pub def layout_tree(node: Pointer[UiNode], cache: StyleCache, vw: int, vh: int) -> LayoutBox:
+    mut root = build(node, cache, 0)
+    measure(root)
+    # The root fills the viewport unless it asked for a specific size.
+    if root.style.w < 0:
+        root.w = vw
+    if root.style.h < 0:
+        root.h = vh
+    place(root, 0, 0)
+    return root
+
+pub def dump_layout(box: LayoutBox, indent: int) -> void:
+    mut pad = ""
+    mut i = 0
+    while i < indent:
+        pad = pad + "  "
+        i = i + 1
+    mut label = box.tag
+    if box.kind == kind_text():
+        label = "text \"" + box.text + "\""
+    print(pad + label + " @(" + box.x.to_str() + "," + box.y.to_str() + ") " + box.w.to_str() + "x" + box.h.to_str())
+    mut j = 0
+    while j < len(box.children):
+        dump_layout(box.children[j], indent + 1)
+        j = j + 1

@@ -1,0 +1,15 @@
+# toolkit.render.canvas — the one seam between the toolkit and the hardware.
+#
+# Everything above this line is written once; everything below it is written
+# twice (hosted buffer, bare-metal MMIO framebuffer). Keeping this interface
+# small is what makes the second implementation cheap.
+#
+# Deliberately only three methods for now. Tauraro interfaces have no default
+# implementations and a missing method surfaces as a LINKER error rather than a
+# compile error, so every method added here is a real cost paid by every
+# backend. draw_glyph arrives in the text-rendering phase, not before.
+
+pub interface Canvas:
+    def width(self) -> int
+    def height(self) -> int
+    def fill_rect(self, x: int, y: int, w: int, h: int, color: int) -> void

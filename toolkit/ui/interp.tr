@@ -1,0 +1,126 @@
+# toolkit.ui.interp — the tree-walking interpreter and the host bridge.
+#
+# This is where "declarative, interpreted at runtime" stops being a design note
+# and becomes code: a UiNode tree plus a style cache in, painted pixels and
+# dispatched events out, with no compiler involved in anything the UI author
+# wrote.
+#
+# The handler table is an ALLOWLIST, and that is a security property rather than
+# a convenience. UI content names a handler as a string; if that string is not a
+# key someone deliberately registered, nothing happens. There is deliberately no
+# path from a name in a UI file to an arbitrary function in the host.
+
+from toolkit.types import Event
+from toolkit.ui.ast import UiNode
+from toolkit.ui.style import StyleCache, unset
+from toolkit.layout.flex import LayoutBox, layout_tree, kind_text, glyph_w, glyph_h
+from toolkit.render.canvas import Canvas
+from string.str import Str
+
+pub class Interpreter:
+    pub cache:    StyleCache
+    pub handlers: Dict[str, def(Event) -> void]
+    pub root:     LayoutBox
+    pub has_root: bool
+    pub renders:  int
+
+extend Interpreter:
+    pub def init() -> Interpreter:
+        mut it = Interpreter()
+        it.cache = StyleCache.init()
+        it.handlers = {}
+        it.has_root = false
+        it.renders = 0
+        return it
+
+    # Register a host function under the name UI content may reference.
+    pub def register(self, name: str, fn: def(Event) -> void) -> void:
+        self.handlers[name] = fn
+
+    pub def is_registered(self, name: str) -> bool:
+        return name in self.handlers
+
+    # Walk the tree, lay it out against the canvas viewport, and paint it.
+    # Re-running this on a new tree is the whole live-reload story: no rebuild,
+    # no restart, and the style cache survives across reloads.
+    pub def render(self, node: Pointer[UiNode], c: Canvas) -> void:
+        # Assign first, then paint through the field. Assigning to self.root
+        # MOVES the local, and touching it afterwards is [M-1].
+        self.root = layout_tree(node, self.cache, c.width(), c.height())
+        self.has_root = true
+        self.renders = self.renders + 1
+        self.paint(self.root, c)
+
+    def paint(self, box: LayoutBox, c: Canvas) -> void:
+        if box.style.bg != unset():
+            c.fill_rect(box.x, box.y, box.w, box.h, box.style.bg)
+
+        if box.kind == kind_text():
+            self.paint_text(box, c)
+
+        mut i = 0
+        while i < len(box.children):
+            self.paint(box.children[i], c)
+            i = i + 1
+
+    # Placeholder glyph painting: one filled cell per non-space character, on
+    # the same advance the real bitmap font will use. This is not text
+    # rendering -- it is proof that glyph positioning is correct so that
+    # dropping in a font later changes what is drawn, not where.
+    def paint_text(self, box: LayoutBox, c: Canvas) -> void:
+        mut n = Str.len(box.text)
+        mut i = 0
+        while i < n:
+            mut ch = Str.char_at(box.text, i)
+            if ch != 32:
+                c.fill_rect(box.x + i * glyph_w(), box.y + 1, glyph_w() - 2, glyph_h() - 3, box.style.fg)
+            i = i + 1
+
+    # --- events ----------------------------------------------------------
+
+    # Deepest-first hit test: the innermost box containing the point that names
+    # a handler wins, which is what makes a button inside a panel behave.
+    def hit(self, box: LayoutBox, x: int, y: int) -> str:
+        if not box.contains(x, y):
+            return ""
+        mut found = ""
+        mut i = 0
+        while i < len(box.children):
+            mut r = self.hit(box.children[i], x, y)
+            if r != "":
+                found = r
+            i = i + 1
+        if found != "":
+            return found
+        return box.handler
+
+    # Returns true only when a registered handler actually ran.
+    pub def dispatch(self, e: Event) -> bool:
+        if not self.has_root:
+            return false
+
+        mut name = self.hit(self.root, e.x, e.y)
+        if name == "":
+            return false
+
+        if not (name in self.handlers):
+            # Named a handler that was never registered. Ignored on purpose.
+            return false
+
+        mut fn = self.handlers[name]
+        fn(e)
+        return true
+
+    pub def stats(self) -> str:
+        return "Interpreter(renders=" + self.renders.to_str() + " handlers=" + len(self.handlers).to_str() + ") " + self.cache.stats()
+
+# Render a tree to a concrete canvas without giving up ownership of it.
+#
+# Tauraro upcasts a concrete class to an interface automatically at a free
+# function's call site, but not at a method's, and writing the upcast out by
+# hand (`mut view: Canvas = canvas`) MOVES the canvas -- after which the caller
+# can no longer touch its own buffer to save or inspect it ([M-1]). Routing the
+# upcast through a free function is what keeps the canvas usable afterwards, so
+# callers should prefer this over Interpreter.render.
+pub def render_to(it: Interpreter, node: Pointer[UiNode], c: Canvas) -> void:
+    it.render(node, c)

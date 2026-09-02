@@ -1,0 +1,21 @@
+class StyleCache:
+    pub cache: Dict[str, int]
+
+extend StyleCache:
+    pub def init() -> StyleCache:
+        mut s = StyleCache()
+        s.cache = {}
+        return s
+
+    pub def resolve(self, key: str) -> int:
+        if key in self.cache:
+            return self.cache[key]
+        mut v = key.len()
+        self.cache[key] = v
+        return v
+
+def main():
+    mut c = StyleCache.init()
+    print(c.resolve("flex p-4 bg-red-500"))
+    print(c.resolve("flex p-4 bg-red-500"))
+    print(c.resolve("p-2"))

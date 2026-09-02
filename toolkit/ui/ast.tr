@@ -1,0 +1,99 @@
+# toolkit.ui.ast — the UI description as data.
+#
+# A boxed recursive enum walked with `match`, which is the same shape the
+# Tauraro compiler uses for its own MIR. Two rules learned the hard way and
+# encoded here rather than rediscovered per call site:
+#
+#   1. Pointer.read() is rejected outside `unsafe:` with error [P-2], so every
+#      dereference goes through read_node().
+#   2. `match` on an enum needs a trailing `case _:` even when every variant is
+#      listed, or the return-path checker reports [F-3] on a function that in
+#      fact returns everywhere.
+
+pub enum UiNode:
+    Element(tag: str, class_str: str, handler: str, children: List[Pointer[UiNode]])
+    Text(class_str: str, value: str)
+
+# The interpreter recurses, and a bare-metal target has a few KB of stack rather
+# than the megabytes a hosted thread gets. Bounding depth is cheap to design in
+# now and awkward to retrofit later.
+pub def max_depth() -> int:
+    return 64
+
+pub def box_node(n: UiNode) -> Pointer[UiNode]:
+    unsafe:
+        mut p = alloc[UiNode](1)
+        p.write(n)
+        return p
+
+pub def read_node(p: Pointer[UiNode]) -> UiNode:
+    mut n = UiNode.Text("", "")
+    unsafe:
+        n = p.read()
+    return n
+
+pub def new_element(tag: str, class_str: str, handler: str) -> Pointer[UiNode]:
+    mut kids: List[Pointer[UiNode]] = []
+    return box_node(UiNode.Element(tag, class_str, handler, kids))
+
+pub def new_text(class_str: str, value: str) -> Pointer[UiNode]:
+    return box_node(UiNode.Text(class_str, value))
+
+pub def count_nodes(p: Pointer[UiNode]) -> int:
+    mut n = read_node(p)
+    match n:
+        case UiNode.Element(tag, cls, handler, kids):
+            mut total = 1
+            for c in kids:
+                total = total + count_nodes(c)
+            return total
+        case UiNode.Text(cls, value):
+            return 1
+        case _:
+            return 0
+
+pub def tree_depth(p: Pointer[UiNode]) -> int:
+    mut n = read_node(p)
+    match n:
+        case UiNode.Element(tag, cls, handler, kids):
+            mut deepest = 0
+            for c in kids:
+                mut d = tree_depth(c)
+                if d > deepest:
+                    deepest = d
+            return deepest + 1
+        case UiNode.Text(cls, value):
+            return 1
+        case _:
+            return 0
+
+pub def class_of(p: Pointer[UiNode]) -> str:
+    mut n = read_node(p)
+    match n:
+        case UiNode.Element(tag, cls, handler, kids):
+            return cls
+        case UiNode.Text(cls, value):
+            return cls
+        case _:
+            return ""
+
+pub def dump(p: Pointer[UiNode], indent: int) -> void:
+    mut pad = ""
+    mut i = 0
+    while i < indent:
+        pad = pad + "  "
+        i = i + 1
+
+    mut n = read_node(p)
+    match n:
+        case UiNode.Element(tag, cls, handler, kids):
+            mut line = pad + tag + " [" + cls + "]"
+            if handler != "":
+                line = line + " @" + handler
+            print(line)
+            for c in kids:
+                dump(c, indent + 1)
+        case UiNode.Text(cls, value):
+            print(pad + "text [" + cls + "] \"" + value + "\"")
+        case _:
+            print(pad + "<unknown>")

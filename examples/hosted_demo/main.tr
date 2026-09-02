@@ -1,0 +1,85 @@
+# examples/hosted_demo — the Phase 0-4 vertical slice, end to end.
+#
+# Run from the repository root:
+#   tauraroc --run examples/hosted_demo/main.tr
+#
+# It loads a UI description from disk, parses it to a UiNode tree, resolves its
+# class strings through the cached style table, lays it out, and paints it to a
+# Canvas -- then does the whole thing again with a DIFFERENT file through the
+# same live Interpreter, which is the live-reload claim the proposal rests on.
+
+from toolkit.types import Event
+from toolkit.ui.parser import UiParser
+from toolkit.ui.interp import Interpreter, render_to
+from toolkit.ui.ast import dump, count_nodes
+from toolkit.layout.flex import dump_layout
+from toolkit.render.hosted.buffer import BufferCanvas
+from toolkit.render.canvas import Canvas
+from io.file import File
+
+def on_ok(e: Event) -> void:
+    print("    [host] on_ok fired at (" + e.x.to_str() + "," + e.y.to_str() + ")")
+
+def on_cancel(e: Event) -> void:
+    print("    [host] on_cancel fired at (" + e.x.to_str() + "," + e.y.to_str() + ")")
+
+def render_file(it: Interpreter, path: str, out: str, w: int, h: int) -> bool:
+    print("")
+    print("=== " + path + " ===")
+
+    mut src = File.read_text(path)
+    if src == "":
+        print("  could not read " + path)
+        return false
+
+    mut p = UiParser.init()
+    mut tree = p.parse(src)
+    p.report()
+    print("  nodes=" + count_nodes(tree).to_str())
+    dump(tree, 1)
+
+    mut canvas = BufferCanvas.init(w, h, 0x0B1120)
+    # render_to rather than it.render: the free function upcasts to Canvas at
+    # this call site without moving the canvas, so it is still ours to save.
+    render_to(it, tree, canvas)
+
+    print("  layout:")
+    dump_layout(it.root, 1)
+
+    if canvas.save_ppm(out):
+        print("  wrote " + out)
+        return true
+    print("  FAILED to write " + out)
+    return false
+
+def main():
+    mut it = Interpreter.init()
+
+    # The allowlist. A handler name in a UI file that is not registered here
+    # can never reach host code.
+    it.register("on_ok", on_ok)
+    it.register("on_cancel", on_cancel)
+
+    mut w = 320
+    mut h = 240
+
+    render_file(it, "examples/hosted_demo/app.ui", "examples/hosted_demo/out_1.ppm", w, h)
+
+    print("")
+    print("--- event dispatch against the live tree ---")
+    # Inside the OK button in the bottom bar.
+    print("  click(40, 130)  -> " + it.dispatch(Event.click(40, 130)).to_str())
+    # Inside CANCEL.
+    print("  click(200, 130) -> " + it.dispatch(Event.click(200, 130)).to_str())
+    # Over the colour strip: inside the tree, but no handler up the chain.
+    print("  click(160, 60)  -> " + it.dispatch(Event.click(160, 60)).to_str())
+    # Off-canvas entirely.
+    print("  click(999, 999) -> " + it.dispatch(Event.click(999, 999)).to_str())
+
+    # --- live reload: same process, same Interpreter, different content ---
+    render_file(it, "examples/hosted_demo/app.reload.ui", "examples/hosted_demo/out_2.ppm", w, h)
+
+    print("")
+    print("--- after reload, the handler table and style cache survived ---")
+    print("  click(40, 130)  -> " + it.dispatch(Event.click(40, 130)).to_str())
+    print("  " + it.stats())

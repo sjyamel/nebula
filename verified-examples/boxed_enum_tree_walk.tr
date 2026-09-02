@@ -1,0 +1,31 @@
+enum UiNode:
+    Element(tag: str, class_str: str, children: List[Pointer[UiNode]])
+    Text(value: str)
+
+def count_nodes(n: Pointer[UiNode]) -> int:
+    mut node = UiNode.Text("")
+    unsafe:
+        node = n.read()
+    match node:
+        case UiNode.Element(tag, cls, children):
+            mut total = 1
+            for c in children:
+                total = total + count_nodes(c)
+            return total
+        case UiNode.Text(v):
+            return 1
+        case _:
+            return 0
+
+def box_node(n: UiNode) -> Pointer[UiNode]:
+    unsafe:
+        mut p = alloc[UiNode](1)
+        p.write(n)
+        return p
+
+def main():
+    mut kids: List[Pointer[UiNode]] = []
+    kids.append(box_node(UiNode.Text("hello")))
+    kids.append(box_node(UiNode.Text("world")))
+    mut root = box_node(UiNode.Element("div", "flex p-4", kids))
+    print(count_nodes(root))

@@ -1,0 +1,244 @@
+# toolkit.ui.parser — text UI description -> UiNode tree.
+#
+# Format (indentation is structure, two spaces per level):
+#
+#   panel "flex-col p-2 bg-slate"
+#     text "text-white" "Hello, Tauraro"
+#     panel "flex-row gap-2"
+#       panel "bg-red grow h-8"
+#       button "bg-green p-1" @on_ok
+#
+# A line is: TAG ["class string"] ["text value"] [@handler]
+# Blank lines and lines whose first non-space character is '#' are ignored.
+#
+# The tree is built BOTTOM-UP: a node's children list is fully populated before
+# the node is boxed. Appending to a list after it has been stored in an enum
+# payload would depend on List[T] being a reference rather than a {ptr,len,cap}
+# value struct, and that is not a bet worth taking.
+#
+# This parser is the toolkit's trust boundary. Once UI content can arrive over a
+# wire it is attacker-reachable, and on bare metal a crash here is a dead
+# machine, not a dead tab. So: no input is assumed well-formed, depth is
+# bounded, and a malformed line is recorded and skipped rather than fatal.
+
+from toolkit.ui.ast import UiNode, box_node, max_depth
+from string.str import Str
+from core.string import StringBuilder
+
+def ch_space() -> int:
+    return 32
+
+def ch_tab() -> int:
+    return 9
+
+def ch_quote() -> int:
+    return 34
+
+def ch_at() -> int:
+    return 64
+
+def ch_hash() -> int:
+    return 35
+
+pub class UiParser:
+    pub depths:   List[int]
+    pub tags:     List[str]
+    pub classes:  List[str]
+    pub values:   List[str]
+    pub handlers: List[str]
+    pub errors:   List[str]
+    pub pos:      int
+
+extend UiParser:
+    pub def init() -> UiParser:
+        mut p = UiParser()
+        p.depths = []
+        p.tags = []
+        p.classes = []
+        p.values = []
+        p.handlers = []
+        p.errors = []
+        p.pos = 0
+        return p
+
+    def add_error(self, line_no: int, msg: str) -> void:
+        self.errors.append("line " + line_no.to_str() + ": " + msg)
+
+    # Scan one already-dedented line into tag / class / value / handler.
+    # Returns false if the line yields no node (blank, comment, or malformed).
+    def scan_line(self, line: str, line_no: int) -> bool:
+        mut n = Str.len(line)
+        mut i = 0
+
+        # skip leading whitespace
+        while i < n:
+            mut c = Str.char_at(line, i)
+            if c != ch_space():
+                if c != ch_tab():
+                    break
+            i = i + 1
+
+        if i >= n:
+            return false
+        if Str.char_at(line, i) == ch_hash():
+            return false
+
+        # tag: run of non-space characters
+        mut tag_sb = StringBuilder.init(16)
+        while i < n:
+            mut c = Str.char_at(line, i)
+            if c == ch_space():
+                break
+            if c == ch_tab():
+                break
+            tag_sb.append_char(c)
+            i = i + 1
+        mut tag = tag_sb.to_string().as_str()
+
+        if tag == "":
+            return false
+
+        mut quoted: List[str] = []
+        mut handler = ""
+
+        while i < n:
+            mut c = Str.char_at(line, i)
+
+            if c == ch_space():
+                i = i + 1
+            elif c == ch_tab():
+                i = i + 1
+            elif c == ch_quote():
+                i = i + 1
+                mut sb = StringBuilder.init(32)
+                mut closed = false
+                while i < n:
+                    mut q = Str.char_at(line, i)
+                    if q == ch_quote():
+                        closed = true
+                        i = i + 1
+                        break
+                    sb.append_char(q)
+                    i = i + 1
+                if not closed:
+                    self.add_error(line_no, "unterminated quoted string")
+                    return false
+                quoted.append(sb.to_string().as_str())
+            elif c == ch_at():
+                i = i + 1
+                mut hb = StringBuilder.init(16)
+                while i < n:
+                    mut h = Str.char_at(line, i)
+                    if h == ch_space():
+                        break
+                    if h == ch_tab():
+                        break
+                    hb.append_char(h)
+                    i = i + 1
+                handler = hb.to_string().as_str()
+            else:
+                # A bare token where a quoted string or @handler was expected.
+                # Skip the run and note it; do not abandon the whole document.
+                self.add_error(line_no, "unexpected token, expected a quoted string or @handler")
+                while i < n:
+                    mut s = Str.char_at(line, i)
+                    if s == ch_space():
+                        break
+                    i = i + 1
+
+        mut cls = ""
+        mut value = ""
+        if len(quoted) > 0:
+            cls = quoted[0]
+        if len(quoted) > 1:
+            value = quoted[1]
+
+        self.tags.append(tag)
+        self.classes.append(cls)
+        self.values.append(value)
+        self.handlers.append(handler)
+        return true
+
+    def leading_depth(self, line: str) -> int:
+        mut n = Str.len(line)
+        mut i = 0
+        mut spaces = 0
+        while i < n:
+            mut c = Str.char_at(line, i)
+            if c == ch_space():
+                spaces = spaces + 1
+            elif c == ch_tab():
+                spaces = spaces + 2
+            else:
+                break
+            i = i + 1
+        return spaces / 2
+
+    # Recursive descent over the flat line table, driven by indentation.
+    def build_at(self, depth: int) -> Pointer[UiNode]:
+        mut idx = self.pos
+        mut tag = self.tags[idx]
+        mut cls = self.classes[idx]
+        mut value = self.values[idx]
+        mut handler = self.handlers[idx]
+        self.pos = self.pos + 1
+
+        if tag == "text":
+            return box_node(UiNode.Text(cls, value))
+
+        mut kids: List[Pointer[UiNode]] = []
+        while self.pos < len(self.depths):
+            mut d = self.depths[self.pos]
+            if d <= depth:
+                break
+            if d > depth + 1:
+                # Over-indented relative to its parent. Treat it as one level
+                # deeper rather than guessing at a deeper nesting the author
+                # did not express.
+                self.errors.append("node " + self.tags[self.pos] + " is over-indented; treated as a direct child")
+            kids.append(self.build_at(d))
+
+        return box_node(UiNode.Element(tag, cls, handler, kids))
+
+    pub def parse(self, src: str) -> Pointer[UiNode]:
+        mut lines = Str.split(src, "\n")
+        mut i = 0
+        while i < len(lines):
+            mut raw = lines[i]
+            mut d = self.leading_depth(raw)
+            if self.scan_line(raw, i + 1):
+                if d > max_depth():
+                    self.errors.append("line " + (i + 1).to_str() + ": nesting deeper than max_depth(); clamped")
+                    d = max_depth()
+                self.depths.append(d)
+            i = i + 1
+
+        if len(self.depths) == 0:
+            self.errors.append("document contains no nodes")
+            mut empty: List[Pointer[UiNode]] = []
+            return box_node(UiNode.Element("panel", "", "", empty))
+
+        self.pos = 0
+        mut root = self.build_at(self.depths[0])
+
+        if self.pos < len(self.depths):
+            self.errors.append("document has more than one root; only the first was used")
+
+        return root
+
+    pub def ok(self) -> bool:
+        return len(self.errors) == 0
+
+    pub def report(self) -> void:
+        if len(self.errors) == 0:
+            print("parse: ok")
+            return
+        print("parse: " + len(self.errors).to_str() + " issue(s)")
+        mut i = 0
+        while i < len(self.errors):
+            print("  - " + self.errors[i])
+            i = i + 1
+
+pub def parse_ui(src: str) -> Pointer[UiNode]:
+    mut p = UiParser.init()
+    return p.parse(src)

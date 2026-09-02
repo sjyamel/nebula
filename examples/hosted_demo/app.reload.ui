@@ -1,0 +1,15 @@
+# The same screen after an "edit": the row became a column, the palette
+# changed, and a row was added. Nothing was recompiled to make this happen --
+# the demo renders app.ui and then this file through the SAME live Interpreter.
+
+panel "flex-col p-4 gap-3 bg-steel"
+  text "text-amber" "RELOADED WITHOUT A REBUILD"
+  panel "flex-col gap-2 h-90"
+    panel "bg-violet grow"
+    panel "bg-amber grow"
+  panel "flex-row gap-3 h-40 p-3 bg-slate"
+    button "bg-green grow" @on_ok
+      text "text-black" "OK"
+    button "bg-red grow" @on_cancel
+      text "text-white" "CANCEL"
+    panel "bg-mist w-40"

@@ -1,0 +1,62 @@
+# Advanced Docs Index
+
+This directory covers advanced Tauraro topics. Core Tauraro development — writing programs, using the standard library, building with modules, concurrency — does not require any of this. These docs exist for when you hit a wall and need a deeper mental model, or when you are building libraries and infrastructure rather than applications.
+
+---
+
+## Contents
+
+| Doc | Topic | When You Need It |
+|-----|-------|-----------------|
+| [09 — Safety Specification](09_safety_spec.md) | **Normative**: the ARC-floor invariants, what `--strict` proves/elides, the elision-soundness theorem, and how every guarantee is verified (corpus + differential oracle + ASan) | Understanding exactly what Tauraro guarantees, and what it does not yet |
+| [01 — Lifetimes & Borrow Checking](01_lifetimes.md) | `ref`/`mut ref`, regions (`from`), `where … outlives`, regions on enum/interface, the `[B-*]`/`[L-*]` checks | Opt-in zero-copy with a compile-time guarantee under `--strict` |
+| [08 — Zero-Copy Guide](08_zero_copy.md) | When zero-copy wins (StrView, borrowed payloads, dict borrows) vs parity, best practices, numbers | Removing copies/allocations/refcount traffic on hot paths |
+| [02 — Advanced Ownership](02_advanced_ownership.md) | Move, borrow, Shared deep dive | Understanding M-2 errors; shared mutable state |
+| [03 — Channel Select](03_channel_select.md) | `select:` for multiplexed channels | Fan-in, timeouts, non-blocking channel ops |
+| [04 — Generators](04_generators.md) | Not currently supported — use list comprehensions / manual loops | — |
+| [05 — Decorators](05_decorators.md) | `@inline`, `@hot`, `@property`, `@value_type`, custom decorators, and the bare-metal decorators | Compile-time code annotation and transformation |
+| [11 — Bare-Metal & Freestanding](11_bare_metal.md) | The `std`/`--no-std`/`--freestanding` runtime tiers, cross-compilation, `@entry`/`@allocator`/`@output`, `@section`/`@naked`/`@interrupt`, `--emit-ld`, `std/hal/mmio` device drivers | Cross-compiling to ARM/RISC-V; writing MCU firmware, drivers, or a kernel — 100% in Tauraro |
+| [10 — Macros](10_macros.md) | `macro def` + `@` — compile-time code generation via f-string templates over an `item` reflection (`@derive_eq`, etc.) | Generating boilerplate (derives, wrappers) from a declaration's shape |
+| [06 — Sendable](06_sendable.md) | Thread-safety enforcement via the `Sendable` interface | Passing types across threads without data races |
+| [07 — Concurrency Guide](07_concurrency_guide.md) | All concurrency models, primitives, decision matrix, best-practice combinations | Choosing the right model; building servers/parallel work; see `examples/concurrency/` |
+
+---
+
+## Prerequisite Reading
+
+Before reading these docs, make sure you are comfortable with:
+
+- [13 — Memory and Ownership](../13_memory_and_ownership.md)
+- [14 — Unsafe and Pointers](../14_unsafe_and_pointers.md)
+- [16 — Concurrency](../16_concurrency.md)
+- [19 — Compiler Errors](../19_compiler_errors.md)
+
+---
+
+## How These Topics Relate
+
+```
+Ownership model (ch 13)
+    │
+    ├── Advanced Ownership (02)  ← explains inference rules + Shared[T]
+    │       │
+    │       └── Lifetimes & Borrows (01)  ← opt-in ref/mut ref + regions + --strict checks
+    │               │
+    │               └── Zero-Copy Guide (08)  ← when borrows remove copies/allocs/refcounts
+    │
+Concurrency (ch 16)
+    │
+    ├── Sendable (06)            ← compile-time thread-safety enforcement
+    │
+    └── Channel Select (03)      ← advanced channel patterns
+
+Language features (ch 21)
+    │
+    ├── Generators (04)          ← not currently supported (see note)
+    │
+    └── Decorators (05)          ← compile-time annotation system
+```
+
+---
+
+← [Operator Overloading](../21_operator_overloading.md) | [Lang Docs Root](../README.md)

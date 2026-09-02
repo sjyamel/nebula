@@ -1,0 +1,174 @@
+# toolkit.ui.style — utility-token table and the resolution cache.
+#
+# The whole point of resolving styles at runtime rather than at compile time is
+# that a class string no longer has to be a literal the compiler can see. The
+# cost of that freedom is a parse per string, and the cache is what makes the
+# cost land once per unique string instead of once per node per frame.
+
+from toolkit.types import rgb
+from string.str import Str
+
+pub def dir_row() -> int:
+    return 0
+
+pub def dir_col() -> int:
+    return 1
+
+pub def unset() -> int:
+    # Sentinel for "this property was never set by any token". Distinguishable
+    # from a legitimate 0 (a zero-width box) and from black (0x000000).
+    return 0 - 1
+
+pub class Style:
+    pub dir:  int
+    pub pad:  int
+    pub gap:  int
+    pub w:    int
+    pub h:    int
+    pub grow: int
+    pub bg:   int
+    pub fg:   int
+
+extend Style:
+    pub def default() -> Style:
+        mut s = Style()
+        s.dir  = dir_row()
+        s.pad  = 0
+        s.gap  = 0
+        s.w    = unset()
+        s.h    = unset()
+        s.grow = 0
+        s.bg   = unset()
+        s.fg   = 0xE6E6E6
+        return s
+
+    pub def copy(self) -> Style:
+        mut s = Style()
+        s.dir  = self.dir
+        s.pad  = self.pad
+        s.gap  = self.gap
+        s.w    = self.w
+        s.h    = self.h
+        s.grow = self.grow
+        s.bg   = self.bg
+        s.fg   = self.fg
+        return s
+
+    pub def to_str(self) -> str:
+        return "Style(dir=" + self.dir.to_str() + " pad=" + self.pad.to_str() + " gap=" + self.gap.to_str() + " w=" + self.w.to_str() + " h=" + self.h.to_str() + " grow=" + self.grow.to_str() + " bg=" + self.bg.to_str() + ")"
+
+# A small named palette. Unknown names resolve to the sentinel so a typo shows
+# up as "nothing was painted" rather than a wrong-but-plausible color.
+pub def color_by_name(name: str) -> int:
+    if name == "black":
+        return 0x000000
+    if name == "white":
+        return 0xFFFFFF
+    if name == "slate":
+        return 0x1E293B
+    if name == "steel":
+        return 0x334155
+    if name == "mist":
+        return 0x94A3B8
+    if name == "red":
+        return 0xEF4444
+    if name == "green":
+        return 0x22C55E
+    if name == "blue":
+        return 0x3B82F6
+    if name == "amber":
+        return 0xF59E0B
+    if name == "violet":
+        return 0x8B5CF6
+    return unset()
+
+# Apply one utility token to a style, in place. Unknown tokens are ignored
+# rather than fatal: UI content can arrive from outside the build, and a typo
+# in a class string must never be able to halt the renderer.
+pub def apply_utility(s: Style, token: str) -> void:
+    if token == "":
+        return
+
+    if token == "flex-row":
+        s.dir = dir_row()
+        return
+    if token == "flex-col":
+        s.dir = dir_col()
+        return
+    if token == "grow":
+        s.grow = 1
+        return
+
+    if Str.starts_with(token, "p-"):
+        mut v = Str.slice(token, 2, Str.len(token))
+        if Str.is_digit(v):
+            s.pad = Str.parse_int(v)
+        return
+
+    if Str.starts_with(token, "gap-"):
+        mut v = Str.slice(token, 4, Str.len(token))
+        if Str.is_digit(v):
+            s.gap = Str.parse_int(v)
+        return
+
+    if Str.starts_with(token, "w-"):
+        mut v = Str.slice(token, 2, Str.len(token))
+        if Str.is_digit(v):
+            s.w = Str.parse_int(v)
+        return
+
+    if Str.starts_with(token, "h-"):
+        mut v = Str.slice(token, 2, Str.len(token))
+        if Str.is_digit(v):
+            s.h = Str.parse_int(v)
+        return
+
+    if Str.starts_with(token, "bg-"):
+        mut name = Str.slice(token, 3, Str.len(token))
+        mut c = color_by_name(name)
+        if c != unset():
+            s.bg = c
+        return
+
+    if Str.starts_with(token, "text-"):
+        mut name = Str.slice(token, 5, Str.len(token))
+        mut c = color_by_name(name)
+        if c != unset():
+            s.fg = c
+        return
+
+pub class StyleCache:
+    pub cache:  Dict[str, Style]
+    pub hits:   int
+    pub misses: int
+
+extend StyleCache:
+    pub def init() -> StyleCache:
+        mut sc = StyleCache()
+        sc.cache = {}
+        sc.hits = 0
+        sc.misses = 0
+        return sc
+
+    # Returns a fresh copy every time. The cached Style is the canonical parse
+    # of that class string; handing callers the shared instance would let one
+    # node's layout mutate every other node that used the same classes.
+    pub def resolve(self, class_str: str) -> Style:
+        if class_str in self.cache:
+            self.hits = self.hits + 1
+            mut cached = self.cache[class_str]
+            return cached.copy()
+
+        self.misses = self.misses + 1
+        mut s = Style.default()
+        mut tokens = Str.split(class_str, " ")
+        mut i = 0
+        while i < len(tokens):
+            apply_utility(s, Str.trim(tokens[i]))
+            i = i + 1
+
+        self.cache[class_str] = s
+        return s.copy()
+
+    pub def stats(self) -> str:
+        return "StyleCache(hits=" + self.hits.to_str() + " misses=" + self.misses.to_str() + " unique=" + len(self.cache).to_str() + ")"

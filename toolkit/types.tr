@@ -1,0 +1,99 @@
+# toolkit.types — the bottom layer. Imports nothing, on purpose.
+#
+# Every other toolkit module is allowed to import this one. Tauraro rejects
+# circular imports outright, so shared vocabulary types live here rather than
+# being owned by whichever module happened to need them first.
+#
+# Color is a packed 0xRRGGBB int rather than a class: it is copied per pixel in
+# the rasterizer's inner loop, and a heap class there would be indefensible.
+
+pub def rgb(r: int, g: int, b: int) -> int:
+    return (r * 65536) + (g * 256) + b
+
+pub def red_of(c: int) -> int:
+    return (c / 65536) % 256
+
+pub def green_of(c: int) -> int:
+    return (c / 256) % 256
+
+pub def blue_of(c: int) -> int:
+    return c % 256
+
+# A few named colors, enough for the utility-token table to start with.
+pub def color_black() -> int:
+    return 0x000000
+
+pub def color_white() -> int:
+    return 0xFFFFFF
+
+pub def color_transparent_sentinel() -> int:
+    # -1 means "no color set". Used by Style so an unset background is
+    # distinguishable from an explicit black one.
+    return 0 - 1
+
+# Event kinds. Defined now, before any real input driver exists, so that
+# hit-testing and the handler bridge can be built and tested against synthetic
+# events long before a PS/2 driver does.
+pub def ev_click() -> int:
+    return 1
+
+pub def ev_key() -> int:
+    return 2
+
+pub class Event:
+    pub kind: int
+    pub x:    int
+    pub y:    int
+    pub code: int
+
+extend Event:
+    pub def click(x: int, y: int) -> Event:
+        mut e = Event()
+        e.kind = ev_click()
+        e.x = x
+        e.y = y
+        e.code = 0
+        return e
+
+    pub def key(code: int) -> Event:
+        mut e = Event()
+        e.kind = ev_key()
+        e.x = 0
+        e.y = 0
+        e.code = code
+        return e
+
+pub class Rect:
+    pub x: int
+    pub y: int
+    pub w: int
+    pub h: int
+
+extend Rect:
+    pub def init(x: int, y: int, w: int, h: int) -> Rect:
+        mut r = Rect()
+        r.x = x
+        r.y = y
+        r.w = w
+        r.h = h
+        return r
+
+    pub def right(self) -> int:
+        return self.x + self.w
+
+    pub def bottom(self) -> int:
+        return self.y + self.h
+
+    pub def contains(self, px: int, py: int) -> bool:
+        if px < self.x:
+            return false
+        if py < self.y:
+            return false
+        if px >= self.x + self.w:
+            return false
+        if py >= self.y + self.h:
+            return false
+        return true
+
+    pub def to_str(self) -> str:
+        return "Rect(" + self.x.to_str() + "," + self.y.to_str() + " " + self.w.to_str() + "x" + self.h.to_str() + ")"

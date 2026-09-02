@@ -1,0 +1,116 @@
+# toolkit.render.hosted.buffer — the dev-loop Canvas backend.
+#
+# An in-memory pixel buffer that can dump itself as an ASCII PPM (P3). P3 rather
+# than binary P6 because the stdlib's File API is str-oriented; a text format
+# costs disk space we do not care about in a dev loop and buys us a file that is
+# trivially diffable and viewable.
+
+from toolkit.render.canvas import Canvas
+from core.string import StringBuilder
+from io.file import File
+
+pub class BufferCanvas implements Canvas:
+    pub w: int
+    pub h: int
+    pub px: List[int]
+
+extend BufferCanvas:
+    pub def init(w: int, h: int, bg: int) -> BufferCanvas:
+        mut c = BufferCanvas()
+        c.w = w
+        c.h = h
+        c.px = []
+        mut i = 0
+        mut n = w * h
+        while i < n:
+            c.px.append(bg)
+            i = i + 1
+        return c
+
+    pub def width(self) -> int:
+        return self.w
+
+    pub def height(self) -> int:
+        return self.h
+
+    # Clipped rectangle fill. The clipping is not politeness -- the interpreter
+    # will hand this coordinates computed from untrusted UI content, and an
+    # out-of-range write here is a corrupted heap hosted and a dead machine
+    # bare-metal.
+    pub def fill_rect(self, x: int, y: int, w: int, h: int, color: int) -> void:
+        if w <= 0:
+            return
+        if h <= 0:
+            return
+
+        mut x0 = x
+        mut y0 = y
+        mut x1 = x + w
+        mut y1 = y + h
+
+        if x0 < 0:
+            x0 = 0
+        if y0 < 0:
+            y0 = 0
+        if x1 > self.w:
+            x1 = self.w
+        if y1 > self.h:
+            y1 = self.h
+
+        if x0 >= x1:
+            return
+        if y0 >= y1:
+            return
+
+        mut yy = y0
+        while yy < y1:
+            mut row = yy * self.w
+            mut xx = x0
+            while xx < x1:
+                self.px[row + xx] = color
+                xx = xx + 1
+            yy = yy + 1
+
+    pub def get_px(self, x: int, y: int) -> int:
+        if x < 0:
+            return 0
+        if y < 0:
+            return 0
+        if x >= self.w:
+            return 0
+        if y >= self.h:
+            return 0
+        return self.px[y * self.w + x]
+
+    pub def clear(self, color: int) -> void:
+        mut i = 0
+        mut n = self.w * self.h
+        while i < n:
+            self.px[i] = color
+            i = i + 1
+
+    pub def to_ppm(self) -> str:
+        # 12 bytes per pixel is a comfortable upper bound for "255 255 255 ".
+        mut sb = StringBuilder.init(self.w * self.h * 12 + 32)
+        sb.append("P3\n")
+        sb.append_int(self.w)
+        sb.append(" ")
+        sb.append_int(self.h)
+        sb.append("\n255\n")
+
+        mut i = 0
+        mut n = self.w * self.h
+        while i < n:
+            mut c = self.px[i]
+            sb.append_int((c / 65536) % 256)
+            sb.append(" ")
+            sb.append_int((c / 256) % 256)
+            sb.append(" ")
+            sb.append_int(c % 256)
+            sb.append("\n")
+            i = i + 1
+
+        return sb.to_string().as_str()
+
+    pub def save_ppm(self, path: str) -> bool:
+        return File.write_text(path, self.to_ppm())
