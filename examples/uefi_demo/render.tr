@@ -1,0 +1,141 @@
+# examples/uefi_demo/render.tr — the whole toolkit, drawn into a real UEFI
+# framebuffer via GOP.
+#
+# This is the same toolkit source examples/bare_demo/main.tr runs on a
+# Cortex-M3 -- parser, style cache, layout, interpreter, EventHandler
+# dispatch, untouched. The only new piece is toolkit/render/uefi/gop.tr,
+# because UEFI hands the caller a real memory-mapped framebuffer directly,
+# unlike the MPS2 board which has no display at all.
+#
+# There is no @entry here, and that is deliberate, not an oversight: UEFI
+# firmware itself is the boot glue (it already did reset vectors, memory
+# setup, and the boot menu before anything here runs), so `@entry` and
+# `--emit-ld` -- both Cortex-M/RISC-V specific -- do not apply. This file
+# compiles with plain `tauraroc render.tr --freestanding --emit c` and is
+# linked into a small hand-written zig UEFI stub (boot.zig) that provides the
+# real EFI entry point and calls the two functions exported below.
+#
+# Build with scripts/build-uefi.ps1, run with scripts/run-uefi.ps1.
+
+from toolkit.types import Event, EventHandler
+from toolkit.ui.parser import UiParser
+from toolkit.ui.interp import Interpreter, render_to, register_handler
+from toolkit.render.uefi.gop import GopCanvas
+
+# ---- Bump allocator over a pool the UEFI stub allocates for us ----
+#
+# Same design proven on the Cortex-M target (see the long comment in
+# examples/bare_demo/main.tr and tau_bugs.txt #4 for why): realloc COPIES,
+# grows IN PLACE when the block is the newest allocation (O(1) instead of
+# O(n^2) for a List built by repeated append), never moves _heap_next
+# backwards on a shrink, and never hands out a zero-length block.
+#
+# The only difference from the bare-metal version is where the arena lives:
+# there it was a hardcoded MMIO-adjacent SRAM address; here the UEFI stub
+# calls tauraro_heap_init() with a pointer from a real AllocatePool call,
+# because UEFI (unlike a bare Cortex-M board) actually has a memory map to
+# ask for one from.
+
+mut _heap_next: usize = 0 as usize
+mut _heap_end:  usize = 0 as usize
+mut _last_ptr:  usize = 0 as usize
+
+pub export def tauraro_heap_init(base: Pointer[u8], size: usize) -> void:
+    unsafe:
+        _heap_next = base as usize
+        _heap_end = (base as usize) + size
+        _last_ptr = 0 as usize
+
+@allocator
+def heap_alloc(n: usize) -> Pointer[u8]:
+    unsafe:
+        mut sz = ((n + 7) / 8) * 8
+        if sz == (0 as usize):
+            sz = 8 as usize
+        mut base = _heap_next
+        # Out of arena. There is nowhere sane to go from a plain
+        # @allocator hook (no error channel back to the caller), so this
+        # is the one place a bug here would show up as a null-pointer
+        # write rather than a controlled failure -- size the pool
+        # generously in the UEFI stub instead of relying on recovery here.
+        if base + sz > _heap_end:
+            return 0 as Pointer[u8]
+        _last_ptr = base
+        _heap_next = base + sz
+        return base as Pointer[u8]
+
+@free
+def heap_free(p: Pointer[u8]):
+    pass
+
+@realloc
+def heap_realloc(p: Pointer[u8], n: usize) -> Pointer[u8]:
+    unsafe:
+        mut pu = p as usize
+        if pu == (0 as usize):
+            return heap_alloc(n)
+
+        if pu == _last_ptr:
+            mut gsz = ((n + 7) / 8) * 8
+            if gsz == (0 as usize):
+                gsz = 8 as usize
+            mut want = pu + gsz
+            if want > _heap_next:
+                _heap_next = want
+            return p
+
+        mut fresh = heap_alloc(n)
+        mut i = 0
+        while i < (n as int):
+            fresh.offset(i).write(p.offset(i).read())
+            i = i + 1
+        return fresh
+
+@calloc
+def heap_calloc(n: usize, sz: usize) -> Pointer[u8]:
+    unsafe:
+        mut total = n * sz
+        mut q = heap_alloc(total)
+        mut i = 0
+        while i < (total as int):
+            q.offset(i).write(0 as u8)
+            i = i + 1
+        return q
+
+# The handler records state; there is no console/UART wired up in this demo,
+# and unlike the bare-metal UART-PPM path there is no stdout-collision reason
+# to avoid printing -- it simply has nowhere configured to go yet.
+mut _ok_hits: int = 0
+
+pub class OkHandler implements EventHandler:
+    pub tag: int
+
+extend OkHandler:
+    pub def init() -> OkHandler:
+        mut h = OkHandler()
+        h.tag = 0
+        return h
+
+    pub def handle(self, e: Event) -> void:
+        _ok_hits = _ok_hits + 1
+
+# Called once by the UEFI stub after it has GOP's framebuffer pointer,
+# resolution, and PixelsPerScanLine. Parses a UI description compiled into
+# the image (no filesystem access wired up yet -- see toolkit/transport/ in
+# the wider project for where that eventually plugs in) and paints it.
+pub export def tauraro_ui_render(fb: Pointer[u32], width: int, height: int, pitch: int) -> void:
+    mut src = "<panel \"flex-col p-4 gap-3 bg-slate\">\n  <text \"text-white\">TAURARO ON UEFI</text>\n  <panel \"flex-row gap-3 h-90\">\n    <panel \"bg-red grow\" />\n    <panel \"bg-green grow\" />\n    <panel \"bg-blue w-60\" />\n  </panel>\n  <panel \"flex-row gap-3 h-40 p-3 bg-steel\">\n    <button \"bg-amber grow\" @on_click(on_ok)>\n      <text \"text-black\">OK</text>\n    </button>\n    <button \"bg-violet grow\" @on_click(on_cancel)>\n      <text \"text-white\">CANCEL</text>\n    </button>\n  </panel>\n</panel>\n"
+
+    mut p = UiParser.init()
+    mut tree = p.parse(src)
+
+    mut it = Interpreter.init()
+    mut ok = OkHandler.init()
+    register_handler(it, "on_ok", ok)
+
+    mut canvas = GopCanvas.init(fb, width, height, pitch)
+    render_to(it, tree, canvas)
+
+    # Exercise the same allowlisted dispatch the other two tiers prove, ahead
+    # of a real pointer/keyboard driver existing for this target.
+    it.dispatch(Event.click(width / 8, height - 20))

@@ -71,6 +71,17 @@ extend BufferCanvas:
                 xx = xx + 1
             yy = yy + 1
 
+    pub def set_pixel(self, x: int, y: int, color: int) -> void:
+        if x < 0:
+            return
+        if y < 0:
+            return
+        if x >= self.w:
+            return
+        if y >= self.h:
+            return
+        self.px[y * self.w + x] = color
+
     pub def get_px(self, x: int, y: int) -> int:
         if x < 0:
             return 0

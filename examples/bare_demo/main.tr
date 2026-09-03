@@ -1,0 +1,196 @@
+# examples/bare_demo — the whole toolkit, on bare metal.
+#
+# Build and run:
+#   .\scripts\build-bare.ps1 -Source examples\bare_demo\main.tr
+#   qemu-system-arm -M mps2-an385 -nographic -kernel build-bare\app.elf > out.ppm
+#
+# There is no operating system here, no libc, and no filesystem. The compiler
+# generates the reset vector and the linker script; the allocator below is the
+# entire memory manager; print() goes straight out a UART register. Everything
+# between those two extremes -- parser, style cache, layout, interpreter,
+# rasteriser -- is the SAME toolkit source the hosted demo runs, imported
+# unchanged.
+#
+# Only two things are substituted, and both are things a bare machine genuinely
+# lacks: BufferCanvas (which needs io.file) becomes FrameBuffer, and reading the
+# UI from disk becomes a string compiled into the image.
+
+from std.hal.mmio import write32
+from string.str import Str
+from toolkit.types import Event, EventHandler
+from toolkit.ui.parser import UiParser
+from toolkit.ui.ast import count_nodes, tree_depth
+from toolkit.ui.interp import Interpreter, render_to, register_handler
+from toolkit.render.bare.framebuffer import FrameBuffer
+
+# ---- Bump allocator over the MPS2-AN385 SRAM window ----
+#
+# The @realloc here COPIES, and that is not incidental. The SDK's own
+# examples/freestanding/mps2_pure.tr defines it as "return heap_alloc(n)" --
+# fresh memory, old contents never copied. That example never grows a
+# collection so the bug is invisible there, but every List/Dict append in this
+# toolkit reallocs, and without the copy each growth silently discards
+# everything appended so far. The symptom is a parser that reports "ok" and
+# returns exactly one node.
+#
+# Still a bump allocator: free is a no-op and memory is never reused, so a real
+# device loop needs the per-frame arena reset from the proposal's 5.6.
+
+mut _heap_next: usize = 0x20080000 as usize
+mut _last_ptr:  usize = 0 as usize
+
+@allocator
+def heap_alloc(n: usize) -> Pointer[u8]:
+    unsafe:
+        # Round to 8 and never hand out a zero-length block. A 0-byte request
+        # that left _heap_next unmoved would return the SAME address to the
+        # next caller, putting two live objects on the same bytes.
+        mut sz = ((n + 7) / 8) * 8
+        if sz == (0 as usize):
+            sz = 8 as usize
+        mut base = _heap_next
+        _last_ptr = base
+        _heap_next = base + sz
+        return base as Pointer[u8]
+
+@free
+def heap_free(p: Pointer[u8]):
+    pass
+
+@realloc
+def heap_realloc(p: Pointer[u8], n: usize) -> Pointer[u8]:
+    unsafe:
+        mut pu = p as usize
+        if pu == (0 as usize):
+            return heap_alloc(n)
+
+        # Fast path: this block is the most recent allocation, so extend the
+        # arena over it instead of copying. A list being appended to in a loop
+        # is almost always the newest block, which keeps growth O(1).
+        if pu == _last_ptr:
+            mut gsz = ((n + 7) / 8) * 8
+            if gsz == (0 as usize):
+                gsz = 8 as usize
+            # Only ever GROW. Moving _heap_next backwards on a shrinking
+            # realloc would hand the tail to the next allocation while this
+            # block is still live.
+            mut want = pu + gsz
+            if want > _heap_next:
+                _heap_next = want
+            return p
+
+        # Slow path: an older block, whose size we do not track. Copy up to n
+        # (the NEW size) bytes -- but CLAMPED to _heap_next - pu, never more.
+        #
+        # This clamp is load-bearing, not defensive. The original version of
+        # this allocator copied a flat `n` bytes unconditionally, reasoning
+        # that "the source is always inside the SRAM window" -- true only
+        # while n happens to be small. Once real content (font-rendered text,
+        # more PPM rows) drove enough interleaved growth that a StringBuilder
+        # being extended was no longer the most-recent allocation, the slow
+        # path's read of `p .. p+n` ran PAST _heap_next into memory nothing
+        # had touched yet -- a Cortex-M bus fault with no handler installed,
+        # which presents as a silent hang with zero further UART output.
+        # Reduced to: emit_ppm on a 96x56 canvas with one <text> row hangs
+        # after ~40 of 56 rows, every time, at the same row. Clamping the
+        # copy to what has actually been allocated so far (_heap_next) makes
+        # the source range always valid, at the cost of nothing -- bytes
+        # beyond the true old size were always "uninitialised tail that
+        # nothing reads" garbage anyway, whether copied from mapped or
+        # unmapped memory.
+        mut fresh = heap_alloc(n)
+        mut avail = _heap_next - pu
+        mut copy_n = n
+        if avail < copy_n:
+            copy_n = avail
+        mut i = 0
+        while i < (copy_n as int):
+            fresh.offset(i).write(p.offset(i).read())
+            i = i + 1
+        return fresh
+
+@calloc
+def heap_calloc(n: usize, sz: usize) -> Pointer[u8]:
+    unsafe:
+        mut total = n * sz
+        mut q = heap_alloc(total)
+        mut i = 0
+        while i < (total as int):
+            q.offset(i).write(0 as u8)
+            i = i + 1
+        return q
+
+# ---- print() sink: CMSDK UART0 ----
+@output
+def uart_write(s: Pointer[char]):
+    unsafe:
+        write32(0x40004008 as usize, 1 as u32)
+        mut i = 0
+        while s.offset(i).read() != (0 as char):
+            write32(0x40004000 as usize, s.offset(i).read() as u32)
+            i = i + 1
+
+# The handler. A class implementing EventHandler rather than a plain function,
+# because calling a function pointer hangs on this target -- see the note on
+# EventHandler in toolkit/types.tr.
+#
+# It records state rather than printing: this program's stdout IS the image
+# file, so anything written before the PPM magic would corrupt it.
+mut _ok_hits: int = 0
+
+pub class OkHandler implements EventHandler:
+    pub tag: int
+
+extend OkHandler:
+    pub def init() -> OkHandler:
+        mut h = OkHandler()
+        h.tag = 0
+        return h
+
+    pub def handle(self, e: Event) -> void:
+        _ok_hits = _ok_hits + 1
+
+@entry
+def kernel_main():
+    # The UI description, compiled into the image because there is no disk to
+    # read it from. Identical in form to examples/hosted_demo/app.ui.
+    # A <text> row proves the baked bitmap font (toolkit/text/) renders
+    # correctly on Cortex-M, not just hosted -- this is real glyph-bitmap
+    # blitting through Canvas.set_pixel, a genuinely new code path on this
+    # tier, not something the earlier solid-color-only demo exercised.
+    #
+    # Colors and the exact canvas size here are deliberately pinned to a
+    # combination confirmed to complete on real hardware emulation -- see
+    # tau_bugs.txt #13. Certain other packed RGB values (amber, violet, mist)
+    # and certain canvas widths (96 hangs, 88 does not, same everything else)
+    # hang deterministically on this exact target for reasons not yet
+    # root-caused. Bisect any change to either before trusting it here.
+    mut src = "<panel \"flex-col p-2 gap-2 bg-slate\">\n  <panel \"flex-row gap-2 h-20\">\n    <panel \"bg-red grow\" />\n    <panel \"bg-green grow\" />\n    <panel \"bg-blue grow\" />\n  </panel>\n  <text \"text-white\">BARE METAL</text>\n  <panel \"flex-row gap-2 h-12\" @on_click(on_ok)>\n    <panel \"bg-blue grow\" />\n    <panel \"bg-red w-14\" />\n  </panel>\n</panel>\n"
+
+    mut p = UiParser.init()
+    mut tree = p.parse(src)
+
+    mut it = Interpreter.init()
+    mut ok = OkHandler.init()
+    register_handler(it, "on_ok", ok)
+
+    # 88px wide: enough for "BARE METAL" (10 chars * 8px + 2*2px padding =
+    # 84px) with a hair of margin, and empirically confirmed to complete
+    # (96px, otherwise identical, hangs -- see tau_bugs.txt #13). 56 tall
+    # fits the color row + text row + button row + padding/gaps
+    # (2+20+2+14+2+12+2 = 54).
+    mut fb = FrameBuffer.init(88, 56, 0x000000)
+    render_to(it, tree, fb)
+
+    # Hit-testing on bare metal, before any input driver exists. y=46 lands
+    # in the button row, which now sits below the added text row.
+    mut on_button = it.dispatch(Event.click(20, 46))
+    mut on_padding = it.dispatch(Event.click(1, 1))
+
+    fb.emit_ppm()
+
+    # Diagnostics after the image data, where PPM tolerates trailing bytes.
+    print("# nodes=" + count_nodes(tree).to_str() + " depth=" + tree_depth(tree).to_str())
+    print("# dispatch button=" + on_button.to_str() + " padding=" + on_padding.to_str() + " hits=" + _ok_hits.to_str())
+    print("# " + it.stats())
+    p.report()

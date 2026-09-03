@@ -1,0 +1,50 @@
+# toolkit.text.font — lookup over the baked bitmap glyph atlas.
+#
+# The atlas itself (toolkit/text/font_data.tr) is generated, not written by
+# hand — see scripts/bake-font.ps1 for why a baked bitmap atlas exists at all
+# rather than parsing the TTF on-device (no rasterizer in Tauraro's stdlib,
+# no float/curve math verified on the freestanding tiers, no filesystem to
+# load a .ttf from on bare metal or UEFI anyway). This module is the only
+# thing between that raw byte data and toolkit.ui.interp's glyph painting.
+
+from toolkit.text.font_data import font_cell_w, font_cell_h, font_first_char, font_glyph_count, font_bitmap
+
+pub class Font:
+    pub bitmap: List[u8]
+
+extend Font:
+    pub def load() -> Font:
+        mut f = Font()
+        f.bitmap = font_bitmap()
+        return f
+
+    pub def cell_w(self) -> int:
+        return font_cell_w()
+
+    pub def cell_h(self) -> int:
+        return font_cell_h()
+
+    # True if pixel (col, row) within the glyph cell for `codepoint` is
+    # foreground. A codepoint outside the baked range (currently ASCII
+    # 32..126) or an out-of-cell (col, row) returns false unconditionally --
+    # an unsupported character renders as blank space, never garbage or a
+    # crash. UI text content is not a trusted input.
+    pub def pixel_set(self, codepoint: int, col: int, row: int) -> bool:
+        mut idx = codepoint - font_first_char()
+        if idx < 0:
+            return false
+        if idx >= font_glyph_count():
+            return false
+        if col < 0:
+            return false
+        if col >= font_cell_w():
+            return false
+        if row < 0:
+            return false
+        if row >= font_cell_h():
+            return false
+
+        mut byte_index = idx * font_cell_h() + row
+        mut rowbyte = self.bitmap[byte_index]
+        mut mask: u8 = (0x80 as u8) >> (col as u8)
+        return (rowbyte & mask) != (0 as u8)

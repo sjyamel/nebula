@@ -1,25 +1,41 @@
 # toolkit.ui.parser — text UI description -> UiNode tree.
 #
-# Format (indentation is structure, two spaces per level):
+# XML/HTML-shaped, not indentation-based. Nesting is expressed by tag
+# structure, matching what an editor's existing markup syntax highlighting
+# already understands:
 #
-#   panel "flex-col p-2 bg-slate"
-#     text "text-white" "Hello, Tauraro"
-#     panel "flex-row gap-2"
-#       panel "bg-red grow h-8"
-#       button "bg-green p-1" @on_ok
+#   <panel "flex-col p-2 bg-slate">
+#     <text "text-white">Hello, Tauraro</text>
+#     <panel "flex-row gap-2">
+#       <panel "bg-red grow h-8" />
+#       <button "bg-green p-1" @on_click(on_ok)>
+#         <text "text-black">OK</text>
+#       </button>
+#     </panel>
+#   </panel>
 #
-# A line is: TAG ["class string"] ["text value"] [@handler]
-# Blank lines and lines whose first non-space character is '#' are ignored.
+# A tag is: `<` TAG [class-string] [@event(handler)] (`/>` | `>` content `</` TAG `>`)
+#   - The class string is a single bare quoted literal (no attribute name,
+#     matching the utility-token strings the style cache already parses).
+#   - `@event(handler)` binds a host handler NAME to an event NAME, e.g.
+#     `@on_click(on_ok)` -- see the comment on UiNode.Element in ast.tr for
+#     why those are two separate strings rather than one.
+#   - `<text ...>...</text>` is the one tag whose body is read VERBATIM as its
+#     value rather than parsed as child elements -- there is no mixed content
+#     (text interleaved with child tags) anywhere else in the grammar.
+#   - `#` starts a line comment; recognized only between tags, not inside a
+#     quoted string, a tag's attributes, or a <text> body.
 #
-# The tree is built BOTTOM-UP: a node's children list is fully populated before
-# the node is boxed. Appending to a list after it has been stored in an enum
-# payload would depend on List[T] being a reference rather than a {ptr,len,cap}
-# value struct, and that is not a bet worth taking.
+# The tree is built BOTTOM-UP: an element's children are fully parsed and
+# appended before the element itself is boxed, for the same reason the old
+# indentation-based parser did this -- appending to a List after it is stored
+# inside a boxed enum payload is not a bet worth taking.
 #
-# This parser is the toolkit's trust boundary. Once UI content can arrive over a
-# wire it is attacker-reachable, and on bare metal a crash here is a dead
-# machine, not a dead tab. So: no input is assumed well-formed, depth is
-# bounded, and a malformed line is recorded and skipped rather than fatal.
+# This parser is the toolkit's trust boundary. Once UI content can arrive over
+# a wire it is attacker-reachable, and on bare metal a crash here is a dead
+# machine, not a dead tab. So: no input is assumed well-formed, nesting depth
+# is bounded, and a malformed construct is recorded and the parser recovers
+# rather than aborting the whole document.
 
 from toolkit.ui.ast import UiNode, box_node, max_depth
 from string.str import Str
@@ -31,6 +47,12 @@ def ch_space() -> int:
 def ch_tab() -> int:
     return 9
 
+def ch_newline() -> int:
+    return 10
+
+def ch_cr() -> int:
+    return 13
+
 def ch_quote() -> int:
     return 34
 
@@ -40,189 +62,365 @@ def ch_at() -> int:
 def ch_hash() -> int:
     return 35
 
+def ch_lt() -> int:
+    return 60
+
+def ch_gt() -> int:
+    return 62
+
+def ch_slash() -> int:
+    return 47
+
+def ch_lparen() -> int:
+    return 40
+
+def ch_rparen() -> int:
+    return 41
+
+def is_ident_char(c: int) -> bool:
+    if c >= 97:
+        if c <= 122:
+            return true
+    if c >= 65:
+        if c <= 90:
+            return true
+    if c >= 48:
+        if c <= 57:
+            return true
+    if c == 95:
+        return true
+    if c == 45:
+        return true
+    return false
+
+def is_space(c: int) -> bool:
+    if c == ch_space():
+        return true
+    if c == ch_tab():
+        return true
+    if c == ch_newline():
+        return true
+    if c == ch_cr():
+        return true
+    return false
+
 pub class UiParser:
-    pub depths:   List[int]
-    pub tags:     List[str]
-    pub classes:  List[str]
-    pub values:   List[str]
-    pub handlers: List[str]
-    pub errors:   List[str]
-    pub pos:      int
+    pub src:    str
+    pub len:    int
+    pub pos:    int
+    pub line:   int
+    pub errors: List[str]
 
 extend UiParser:
     pub def init() -> UiParser:
         mut p = UiParser()
-        p.depths = []
-        p.tags = []
-        p.classes = []
-        p.values = []
-        p.handlers = []
-        p.errors = []
+        p.src = ""
+        p.len = 0
         p.pos = 0
+        p.line = 1
+        p.errors = []
         return p
 
-    def add_error(self, line_no: int, msg: str) -> void:
-        self.errors.append("line " + line_no.to_str() + ": " + msg)
+    def add_error(self, msg: str) -> void:
+        self.errors.append("line " + self.line.to_str() + ": " + msg)
 
-    # Scan one already-dedented line into tag / class / value / handler.
-    # Returns false if the line yields no node (blank, comment, or malformed).
-    def scan_line(self, line: str, line_no: int) -> bool:
-        mut n = Str.len(line)
-        mut i = 0
+    def peek(self) -> int:
+        if self.pos >= self.len:
+            return 0 - 1
+        return Str.char_at(self.src, self.pos)
 
-        # skip leading whitespace
-        while i < n:
-            mut c = Str.char_at(line, i)
-            if c != ch_space():
-                if c != ch_tab():
-                    break
-            i = i + 1
+    def peek_at(self, ahead: int) -> int:
+        mut i = self.pos + ahead
+        if i >= self.len:
+            return 0 - 1
+        return Str.char_at(self.src, i)
 
-        if i >= n:
-            return false
-        if Str.char_at(line, i) == ch_hash():
-            return false
-
-        # tag: run of non-space characters
-        mut tag_sb = StringBuilder.init(16)
-        while i < n:
-            mut c = Str.char_at(line, i)
-            if c == ch_space():
-                break
-            if c == ch_tab():
-                break
-            tag_sb.append_char(c)
-            i = i + 1
-        mut tag = tag_sb.to_string().as_str()
-
-        if tag == "":
-            return false
-
-        mut quoted: List[str] = []
-        mut handler = ""
-
-        while i < n:
-            mut c = Str.char_at(line, i)
-
-            if c == ch_space():
-                i = i + 1
-            elif c == ch_tab():
-                i = i + 1
-            elif c == ch_quote():
-                i = i + 1
-                mut sb = StringBuilder.init(32)
-                mut closed = false
-                while i < n:
-                    mut q = Str.char_at(line, i)
-                    if q == ch_quote():
-                        closed = true
-                        i = i + 1
-                        break
-                    sb.append_char(q)
-                    i = i + 1
-                if not closed:
-                    self.add_error(line_no, "unterminated quoted string")
-                    return false
-                quoted.append(sb.to_string().as_str())
-            elif c == ch_at():
-                i = i + 1
-                mut hb = StringBuilder.init(16)
-                while i < n:
-                    mut h = Str.char_at(line, i)
-                    if h == ch_space():
-                        break
-                    if h == ch_tab():
-                        break
-                    hb.append_char(h)
-                    i = i + 1
-                handler = hb.to_string().as_str()
-            else:
-                # A bare token where a quoted string or @handler was expected.
-                # Skip the run and note it; do not abandon the whole document.
-                self.add_error(line_no, "unexpected token, expected a quoted string or @handler")
-                while i < n:
-                    mut s = Str.char_at(line, i)
-                    if s == ch_space():
-                        break
-                    i = i + 1
-
-        mut cls = ""
-        mut value = ""
-        if len(quoted) > 0:
-            cls = quoted[0]
-        if len(quoted) > 1:
-            value = quoted[1]
-
-        self.tags.append(tag)
-        self.classes.append(cls)
-        self.values.append(value)
-        self.handlers.append(handler)
-        return true
-
-    def leading_depth(self, line: str) -> int:
-        mut n = Str.len(line)
-        mut i = 0
-        mut spaces = 0
-        while i < n:
-            mut c = Str.char_at(line, i)
-            if c == ch_space():
-                spaces = spaces + 1
-            elif c == ch_tab():
-                spaces = spaces + 2
-            else:
-                break
-            i = i + 1
-        return spaces / 2
-
-    # Recursive descent over the flat line table, driven by indentation.
-    def build_at(self, depth: int) -> Pointer[UiNode]:
-        mut idx = self.pos
-        mut tag = self.tags[idx]
-        mut cls = self.classes[idx]
-        mut value = self.values[idx]
-        mut handler = self.handlers[idx]
+    def advance(self) -> int:
+        mut c = self.peek()
+        if c == ch_newline():
+            self.line = self.line + 1
         self.pos = self.pos + 1
+        return c
+
+    def at_end(self) -> bool:
+        return self.pos >= self.len
+
+    # Skip whitespace and `#`-to-end-of-line comments. Called only between
+    # tags, never inside a quoted string, an attribute list, or a <text> body.
+    def skip_trivia(self) -> void:
+        mut going = true
+        while going:
+            going = false
+            while is_space(self.peek()):
+                self.advance()
+                going = true
+            if self.peek() == ch_hash():
+                while (not self.at_end()) and self.peek() != ch_newline():
+                    self.advance()
+                going = true
+
+    def read_ident(self) -> str:
+        mut sb = StringBuilder.init(16)
+        while is_ident_char(self.peek()):
+            sb.append_char(self.advance())
+        return sb.to_string().as_str()
+
+    # Consumes the opening quote, everything up to the closing quote, and the
+    # closing quote. Returns "" and records an error if the string is
+    # unterminated (EOF or newline reached first) -- a class string spanning
+    # a line break is always a typo, not intentional content.
+    def read_quoted(self) -> str:
+        self.advance()
+        mut sb = StringBuilder.init(32)
+        mut closed = false
+        while not self.at_end():
+            mut c = self.peek()
+            if c == ch_quote():
+                self.advance()
+                closed = true
+                break
+            if c == ch_newline():
+                break
+            sb.append_char(self.advance())
+        if not closed:
+            self.add_error("unterminated quoted string")
+            return ""
+        return sb.to_string().as_str()
+
+    # Parses `@ident(ident)` starting at `@`. Returns (event_name, handler);
+    # either half is "" if the attribute was malformed, and an error is
+    # recorded rather than the whole tag being abandoned.
+    def read_event_attr(self) -> List[str]:
+        self.advance()
+        mut evt = self.read_ident()
+        if evt == "":
+            self.add_error("expected an event name after '@'")
+            return ["", ""]
+        if self.peek() != ch_lparen():
+            self.add_error("expected '(' after @" + evt)
+            return [evt, ""]
+        self.advance()
+        mut handler = self.read_ident()
+        if handler == "":
+            self.add_error("expected a handler name inside @" + evt + "(...)")
+        if self.peek() != ch_rparen():
+            self.add_error("expected ')' to close @" + evt + "(" + handler)
+        else:
+            self.advance()
+        return [evt, handler]
+
+    # Parses everything between the tag name and the closing `>` or `/>`:
+    # at most one class string, at most one @event(handler). Returns
+    # [class_str, event_name, handler, "true"/"false" self_closing].
+    def parse_attrs(self) -> List[str]:
+        mut cls = ""
+        mut evt = ""
+        mut handler = ""
+        mut got_cls = false
+        mut got_evt = false
+
+        while true:
+            self.skip_trivia()
+            mut c = self.peek()
+
+            if c == ch_quote():
+                mut v = self.read_quoted()
+                if got_cls:
+                    self.add_error("extra quoted string ignored (only one class string per tag)")
+                else:
+                    cls = v
+                    got_cls = true
+            elif c == ch_at():
+                mut pair = self.read_event_attr()
+                if got_evt:
+                    self.add_error("extra @" + pair[0] + "(...) ignored (only one handler per tag)")
+                else:
+                    evt = pair[0]
+                    handler = pair[1]
+                    got_evt = true
+            elif c == ch_slash():
+                if self.peek_at(1) == ch_gt():
+                    self.advance()
+                    self.advance()
+                    return [cls, evt, handler, "true"]
+                self.add_error("unexpected '/'")
+                self.advance()
+            elif c == ch_gt():
+                self.advance()
+                return [cls, evt, handler, "false"]
+            elif c == (0 - 1):
+                self.add_error("unexpected end of input inside a tag")
+                return [cls, evt, handler, "true"]
+            else:
+                self.add_error("unexpected character in tag attributes")
+                self.advance()
+
+        # Unreachable: every branch above returns or loops. Present only
+        # because the compiler's return-path checker cannot prove a `while
+        # true:` loop never falls through, the same reason `match` needs a
+        # trailing `case _:` even when every variant already returns.
+        return [cls, evt, handler, "true"]
+
+    # `<text ...>` bodies are read verbatim up to the literal `</text>` --
+    # never re-tokenized as markup, so a value can contain '<' or '&' with no
+    # escaping scheme needed. There is no entity decoding.
+    def read_text_body(self, tag: str) -> str:
+        mut sb = StringBuilder.init(64)
+        mut closer = "</" + tag + ">"
+        mut clen = Str.len(closer)
+
+        while not self.at_end():
+            mut matched = true
+            mut i = 0
+            while i < clen:
+                if self.peek_at(i) != Str.char_at(closer, i):
+                    matched = false
+                    break
+                i = i + 1
+            if matched:
+                mut j = 0
+                while j < clen:
+                    self.advance()
+                    j = j + 1
+                return sb.to_string().as_str()
+            sb.append_char(self.advance())
+
+        self.add_error("unterminated <" + tag + "> -- expected " + closer)
+        return sb.to_string().as_str()
+
+    # Parses one element starting at '<' (already confirmed present by the
+    # caller). depth bounds recursion the same way the old indentation parser
+    # bounded nesting -- a tree deep enough to overflow the stack is a denial
+    # of service hosted and a dead machine bare-metal.
+    def parse_element(self, depth: int) -> Pointer[UiNode]:
+        self.advance()
+        mut tag = self.read_ident()
+        if tag == "":
+            self.add_error("expected a tag name after '<'")
+            mut empty: List[Pointer[UiNode]] = []
+            return box_node(UiNode.Element("panel", "", "", "", empty))
+
+        mut attrs = self.parse_attrs()
+        mut cls = attrs[0]
+        mut evt = attrs[1]
+        mut handler = attrs[2]
+        mut self_closing = attrs[3] == "true"
 
         if tag == "text":
-            return box_node(UiNode.Text(cls, value))
+            if self_closing:
+                return box_node(UiNode.Text(cls, ""))
+            return box_node(UiNode.Text(cls, self.read_text_body(tag)))
+
+        if self_closing:
+            mut kids0: List[Pointer[UiNode]] = []
+            return box_node(UiNode.Element(tag, cls, evt, handler, kids0))
+
+        if depth > max_depth():
+            self.add_error("nesting deeper than max_depth() under <" + tag + ">; children dropped")
+            self.skip_to_close(tag)
+            mut kids1: List[Pointer[UiNode]] = []
+            return box_node(UiNode.Element(tag, cls, evt, handler, kids1))
 
         mut kids: List[Pointer[UiNode]] = []
-        while self.pos < len(self.depths):
-            mut d = self.depths[self.pos]
-            if d <= depth:
+        while true:
+            self.skip_trivia()
+            mut c = self.peek()
+
+            if c == (0 - 1):
+                self.add_error("unexpected end of input, expected </" + tag + ">")
                 break
-            if d > depth + 1:
-                # Over-indented relative to its parent. Treat it as one level
-                # deeper rather than guessing at a deeper nesting the author
-                # did not express.
-                self.errors.append("node " + self.tags[self.pos] + " is over-indented; treated as a direct child")
-            kids.append(self.build_at(d))
+            elif c == ch_lt():
+                if self.peek_at(1) == ch_slash():
+                    break
+                kids.append(self.parse_element(depth + 1))
+            else:
+                self.add_error("expected '<', found stray content before </" + tag + ">")
+                self.advance()
 
-        return box_node(UiNode.Element(tag, cls, handler, kids))
+        self.consume_close_tag(tag)
+        return box_node(UiNode.Element(tag, cls, evt, handler, kids))
 
-    pub def parse(self, src: str) -> Pointer[UiNode]:
-        mut lines = Str.split(src, "\n")
-        mut i = 0
-        while i < len(lines):
-            mut raw = lines[i]
-            mut d = self.leading_depth(raw)
-            if self.scan_line(raw, i + 1):
-                if d > max_depth():
-                    self.errors.append("line " + (i + 1).to_str() + ": nesting deeper than max_depth(); clamped")
-                    d = max_depth()
-                self.depths.append(d)
-            i = i + 1
+    # Consumes `</name>` where `name` is ideally `tag`. A mismatched name is
+    # recorded but still treated as closing the current element -- assuming a
+    # typo and continuing produces a far more useful error report than
+    # cascading failures through the rest of the document.
+    def consume_close_tag(self, tag: str) -> void:
+        if self.peek() != ch_lt():
+            return
+        self.advance()
+        if self.peek() != ch_slash():
+            self.add_error("expected '</" + tag + ">'")
+            return
+        self.advance()
+        mut closing = self.read_ident()
+        if closing != tag:
+            self.add_error("mismatched closing tag: expected </" + tag + ">, found </" + closing + ">")
+        self.skip_trivia()
+        if self.peek() == ch_gt():
+            self.advance()
+        else:
+            self.add_error("expected '>' to close </" + closing + ">")
 
-        if len(self.depths) == 0:
-            self.errors.append("document contains no nodes")
-            mut empty: List[Pointer[UiNode]] = []
-            return box_node(UiNode.Element("panel", "", "", empty))
+    # Recovery path for the max-depth clamp: discard the remainder of this
+    # element's body by tracking nested <tag>/</tag> pairs of the SAME name,
+    # rather than assuming the first "</...>" seen belongs to us.
+    def skip_to_close(self, tag: str) -> void:
+        mut opens = 1
+        while (not self.at_end()) and opens > 0:
+            self.skip_trivia()
+            if self.peek() != ch_lt():
+                if self.at_end():
+                    break
+                self.advance()
+                continue
+            mut is_close = self.peek_at(1) == ch_slash()
+            mut save = self.pos
+            self.advance()
+            if is_close:
+                self.advance()
+            mut name = self.read_ident()
+            if name == tag:
+                if is_close:
+                    opens = opens - 1
+                else:
+                    # A self-closing nested <tag .../> opens nothing further
+                    # -- miscounting this would leave `opens` permanently too
+                    # high and silently swallow the rest of the document.
+                    mut nested = self.parse_attrs()
+                    if nested[3] != "true":
+                        opens = opens + 1
+                    continue
+            if is_close:
+                self.skip_trivia()
+                if self.peek() == ch_gt():
+                    self.advance()
+            else:
+                self.pos = save
+                self.parse_element(max_depth() + 1)
 
+    pub def parse(self, source: str) -> Pointer[UiNode]:
+        self.src = source
+        self.len = Str.len(source)
         self.pos = 0
-        mut root = self.build_at(self.depths[0])
+        self.line = 1
 
-        if self.pos < len(self.depths):
-            self.errors.append("document has more than one root; only the first was used")
+        self.skip_trivia()
+
+        if self.at_end():
+            self.add_error("document contains no nodes")
+            mut empty: List[Pointer[UiNode]] = []
+            return box_node(UiNode.Element("panel", "", "", "", empty))
+
+        if self.peek() != ch_lt():
+            self.add_error("expected '<' to start the root element")
+            mut empty2: List[Pointer[UiNode]] = []
+            return box_node(UiNode.Element("panel", "", "", "", empty2))
+
+        mut root = self.parse_element(0)
+
+        self.skip_trivia()
+        if not self.at_end():
+            self.add_error("document has more than one root; only the first was used")
 
         return root
 

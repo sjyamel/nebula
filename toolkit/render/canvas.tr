@@ -4,12 +4,19 @@
 # twice (hosted buffer, bare-metal MMIO framebuffer). Keeping this interface
 # small is what makes the second implementation cheap.
 #
-# Deliberately only three methods for now. Tauraro interfaces have no default
-# implementations and a missing method surfaces as a LINKER error rather than a
-# compile error, so every method added here is a real cost paid by every
-# backend. draw_glyph arrives in the text-rendering phase, not before.
+# Deliberately kept small. Tauraro interfaces have no default implementations
+# and a missing method surfaces as a LINKER error rather than a compile error,
+# so every method added here is a real cost paid by every backend.
+#
+# set_pixel arrived in the text-rendering phase (toolkit.text.font +
+# toolkit.ui.interp's glyph painting): a baked bitmap glyph is an irregular
+# per-pixel pattern, not a rectangle, so fill_rect alone cannot draw one.
+# Deliberately NOT a draw_glyph(codepoint, ...) method here instead -- that
+# would couple every Canvas backend to font lookup. The font stays entirely
+# in toolkit.text and toolkit.ui.interp; Canvas only ever gets pixels/rects.
 
 pub interface Canvas:
     def width(self) -> int
     def height(self) -> int
     def fill_rect(self, x: int, y: int, w: int, h: int, color: int) -> void
+    def set_pixel(self, x: int, y: int, color: int) -> void

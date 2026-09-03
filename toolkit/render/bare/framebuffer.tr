@@ -1,0 +1,150 @@
+# toolkit.render.bare.framebuffer — the bare-metal Canvas backend.
+#
+# Deliberately NOT a display driver. It rasterises into a plain RAM buffer and
+# streams the result out as an ASCII PPM through print(), which under
+# --freestanding is wired to the UART by the program's @output sink. That
+# proves the whole toolkit runs on real hardware while deferring the one
+# genuinely large piece -- a virtio-gpu or LCD driver -- until it is the only
+# thing left to build.
+#
+# The clipping logic is duplicated from the hosted BufferCanvas rather than
+# shared. That duplication is the point of the Canvas seam: this file is the
+# half that gets written twice, and it must not drag in io.file or anything
+# else the freestanding tier cannot link.
+#
+# Storage is Vec[int] rather than the hosted backend's List[int], and that is a
+# hard requirement rather than a preference. A bump allocator cannot free, so
+# every List growth reallocates and copies; building a 64x48 buffer by repeated
+# append never finishes on an emulated Cortex-M3. Vec.init(w*h) reserves the
+# exact final size up front, so the pixel store is allocated once and never
+# grows.
+
+from toolkit.render.canvas import Canvas
+from core.string import StringBuilder
+from core.vec import Vec
+
+pub class FrameBuffer implements Canvas:
+    pub w:  int
+    pub h:  int
+    pub px: Vec[int]
+
+extend FrameBuffer:
+    pub def init(w: int, h: int, bg: int) -> FrameBuffer:
+        mut f = FrameBuffer()
+        f.w = w
+        f.h = h
+        mut n = w * h
+        f.px = Vec[int].init(n)
+        mut i = 0
+        while i < n:
+            f.px.push(bg)
+            i = i + 1
+        return f
+
+    pub def width(self) -> int:
+        return self.w
+
+    pub def height(self) -> int:
+        return self.h
+
+    # Bounds are clamped, not trusted. Bare metal has no MMU to catch a stray
+    # write: out-of-range here is a dead machine, not an exception.
+    pub def fill_rect(self, x: int, y: int, w: int, h: int, color: int) -> void:
+        if w <= 0:
+            return
+        if h <= 0:
+            return
+
+        mut x0 = x
+        mut y0 = y
+        mut x1 = x + w
+        mut y1 = y + h
+
+        if x0 < 0:
+            x0 = 0
+        if y0 < 0:
+            y0 = 0
+        if x1 > self.w:
+            x1 = self.w
+        if y1 > self.h:
+            y1 = self.h
+
+        if x0 >= x1:
+            return
+        if y0 >= y1:
+            return
+
+        mut yy = y0
+        while yy < y1:
+            mut row = yy * self.w
+            mut xx = x0
+            while xx < x1:
+                self.px.set(row + xx, color)
+                xx = xx + 1
+            yy = yy + 1
+
+    pub def set_pixel(self, x: int, y: int, color: int) -> void:
+        if x < 0:
+            return
+        if y < 0:
+            return
+        if x >= self.w:
+            return
+        if y >= self.h:
+            return
+        self.px.set(y * self.w + x, color)
+
+    pub def get_px(self, x: int, y: int) -> int:
+        if x < 0:
+            return 0
+        if y < 0:
+            return 0
+        if x >= self.w:
+            return 0
+        if y >= self.h:
+            return 0
+        return self.px.get(y * self.w + x)
+
+    # Emit one row per print() rather than building the whole image in memory.
+    # The bump allocator never frees, so a single StringBuilder grown to the
+    # size of the full image would burn the arena on realloc copies -- but a
+    # FRESH StringBuilder per row has the identical problem at a smaller
+    # scale: on a never-frees allocator, N row-sized buffers that are each
+    # used once and abandoned cost exactly as much arena as one N-row buffer
+    # would. Confirmed the hard way on a 96x56 canvas with real text: heap
+    # usage grew ~2.4KB/row (one StringBuilder.init(w*12+8) per row, never
+    # reclaimed) and the emulated Cortex-M3 bus-faulted -- with no fault
+    # handler installed, that presents as a silent hang with zero further
+    # UART output -- once cumulative usage crossed roughly the QEMU
+    # mps2-an385 model's actual mapped SRAM extent. One StringBuilder,
+    # allocated ONCE and `.clear()`-ed (resets length in place, no
+    # reallocation) each iteration, keeps peak usage to one row regardless of
+    # image height. Also print(sb.as_str()) rather than
+    # print(sb.to_string().as_str()) below: StringBuilder.to_string()
+    # allocates and memcpy's a FRESH copy of the buffer on every call
+    # (StringObj.init does _tr_checked_alloc + _tr_c_memcpy); as_str() wraps
+    # the SAME buffer with zero allocation. Reusing sb alone, without this
+    # second fix, would still have accumulated one fresh copy's worth of
+    # arena per row.
+    pub def emit_ppm(self) -> void:
+        print("P3")
+        print(self.w.to_str() + " " + self.h.to_str())
+        print("255")
+
+        mut sb = StringBuilder.init(self.w * 12 + 8)
+        mut y = 0
+        while y < self.h:
+            sb.clear()
+            mut row = y * self.w
+            mut x = 0
+            while x < self.w:
+                mut c = self.px.get(row + x)
+                sb.append_int((c / 65536) % 256)
+                sb.append(" ")
+                sb.append_int((c / 256) % 256)
+                sb.append(" ")
+                sb.append_int(c % 256)
+                sb.append(" ")
+                x = x + 1
+            print(sb.as_str())
+            y = y + 1

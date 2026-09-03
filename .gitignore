@@ -2,14 +2,20 @@
 # which is the repo root because module resolution requires compiling from here.
 build/
 build-bare*/
+build-uefi*/
 *.elf
 *.ld
 
-# Compiled executables (tauraroc names them after the entry file's basename).
+# Compiled executables (tauraroc names them after the entry file's basename)
+# and their MSVC debug-symbol byproduct.
 *.exe
+*.pdb
 main
 hello
 smoke_*
 
-# Renderer output.
+# Renderer output -- both the raw capture and any PNG a viewer script wrote
+# from it (scripts/ppm-to-png.ps1). Source .ui/.tr files are never affected;
+# this only matches what the demos write out.
 *.ppm
+*.png

@@ -40,6 +40,20 @@ pub def ev_click() -> int:
 pub def ev_key() -> int:
     return 2
 
+# The event NAME a UI file binds with `@name(handler)` (e.g. `on_click`) is a
+# free string chosen by whoever wrote the markup; this is what maps an
+# incoming Event's numeric kind to the one name the interpreter currently
+# knows how to dispatch. `ev_key()` has no mapping yet -- a node written as
+# `@on_key(...)` parses fine and sits in the tree unused until a real event
+# kind and dispatch path exist for it.
+pub def event_name_click() -> str:
+    return "on_click"
+
+pub def event_name_for_kind(kind: int) -> str:
+    if kind == ev_click():
+        return event_name_click()
+    return ""
+
 pub class Event:
     pub kind: int
     pub x:    int
@@ -62,6 +76,18 @@ extend Event:
         e.y = 0
         e.code = code
         return e
+
+# The event-handler contract.
+#
+# An interface rather than a `def(Event) -> void` function pointer, and that is
+# forced by the target, not by taste. Calling ANY first-class function value
+# hangs under --freestanding on Cortex-M -- even `mut f: def(int) -> int = add1;
+# f(41)` in a standalone program with no toolkit involved. Interface dispatch
+# goes through a vtable and works on both tiers (the Canvas backend proves it),
+# so the handler bridge is built on interfaces instead. Revisit if the compiler
+# grows working function pointers on the freestanding tier.
+pub interface EventHandler:
+    def handle(self, e: Event) -> void
 
 pub class Rect:
     pub x: int

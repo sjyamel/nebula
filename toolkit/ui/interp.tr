@@ -10,16 +10,24 @@
 # key someone deliberately registered, nothing happens. There is deliberately no
 # path from a name in a UI file to an arbitrary function in the host.
 
-from toolkit.types import Event
-from toolkit.ui.ast import UiNode
+from toolkit.types import Event, EventHandler, event_name_for_kind
+from toolkit.ui.ast import UiNode, max_depth
 from toolkit.ui.style import StyleCache, unset
-from toolkit.layout.flex import LayoutBox, layout_tree, kind_text, glyph_w, glyph_h
+from toolkit.layout.flex import LayoutBox, layout_tree, kind_text
 from toolkit.render.canvas import Canvas
+from toolkit.text.font import Font
 from string.str import Str
+
+# One entry in the handler allowlist: a name UI content may reference, and the
+# host object it resolves to.
+pub class HandlerSlot:
+    pub name: str
+    pub h:    EventHandler
 
 pub class Interpreter:
     pub cache:    StyleCache
-    pub handlers: Dict[str, def(Event) -> void]
+    pub font:     Font
+    pub handlers: List[HandlerSlot]
     pub root:     LayoutBox
     pub has_root: bool
     pub renders:  int
@@ -28,17 +36,27 @@ extend Interpreter:
     pub def init() -> Interpreter:
         mut it = Interpreter()
         it.cache = StyleCache.init()
-        it.handlers = {}
+        it.font = Font.load()
+        it.handlers = []
         it.has_root = false
         it.renders = 0
         return it
 
-    # Register a host function under the name UI content may reference.
-    pub def register(self, name: str, fn: def(Event) -> void) -> void:
-        self.handlers[name] = fn
+    # Takes an already-interface-typed handler; callers should go through the
+    # free function register_handler() below so the upcast happens without a move.
+    pub def add_slot(self, name: str, h: EventHandler) -> void:
+        mut slot = HandlerSlot()
+        slot.name = name
+        slot.h = h
+        self.handlers.append(slot)
 
     pub def is_registered(self, name: str) -> bool:
-        return name in self.handlers
+        mut i = 0
+        while i < len(self.handlers):
+            if self.handlers[i].name == name:
+                return true
+            i = i + 1
+        return false
 
     # Walk the tree, lay it out against the canvas viewport, and paint it.
     # Re-running this on a new tree is the whole live-reload story: no rebuild,
@@ -63,56 +81,99 @@ extend Interpreter:
             self.paint(box.children[i], c)
             i = i + 1
 
-    # Placeholder glyph painting: one filled cell per non-space character, on
-    # the same advance the real bitmap font will use. This is not text
-    # rendering -- it is proof that glyph positioning is correct so that
-    # dropping in a font later changes what is drawn, not where.
+    # Real glyph painting from the baked bitmap font (toolkit/text/), one
+    # pixel at a time via Canvas.set_pixel -- an irregular glyph shape has no
+    # rectangle decomposition worth the bookkeeping at this cell size. Layout
+    # already reserves exactly `font.cell_w() x font.cell_h()` per character
+    # (toolkit.layout.flex's glyph_w()/glyph_h() are wired to the same baked
+    # font data), so glyph positions here match where layout placed them with
+    # no separate metrics to keep in sync.
     def paint_text(self, box: LayoutBox, c: Canvas) -> void:
+        mut cw = self.font.cell_w()
+        mut ch = self.font.cell_h()
         mut n = Str.len(box.text)
         mut i = 0
         while i < n:
-            mut ch = Str.char_at(box.text, i)
-            if ch != 32:
-                c.fill_rect(box.x + i * glyph_w(), box.y + 1, glyph_w() - 2, glyph_h() - 3, box.style.fg)
+            mut codepoint = Str.char_at(box.text, i)
+            mut col = 0
+            while col < cw:
+                mut row = 0
+                while row < ch:
+                    if self.font.pixel_set(codepoint, col, row):
+                        c.set_pixel(box.x + i * cw + col, box.y + row, box.style.fg)
+                    row = row + 1
+                col = col + 1
             i = i + 1
 
     # --- events ----------------------------------------------------------
-
-    # Deepest-first hit test: the innermost box containing the point that names
-    # a handler wins, which is what makes a button inside a panel behave.
-    def hit(self, box: LayoutBox, x: int, y: int) -> str:
-        if not box.contains(x, y):
-            return ""
-        mut found = ""
-        mut i = 0
-        while i < len(box.children):
-            mut r = self.hit(box.children[i], x, y)
-            if r != "":
-                found = r
-            i = i + 1
-        if found != "":
-            return found
-        return box.handler
 
     # Returns true only when a registered handler actually ran.
     pub def dispatch(self, e: Event) -> bool:
         if not self.has_root:
             return false
 
-        mut name = self.hit(self.root, e.x, e.y)
+        mut wanted = event_name_for_kind(e.kind)
+        if wanted == "":
+            return false
+
+        mut name = hit_test(self.root, e.x, e.y, 0, wanted)
         if name == "":
             return false
 
-        if not (name in self.handlers):
-            # Named a handler that was never registered. Ignored on purpose.
-            return false
-
-        mut fn = self.handlers[name]
-        fn(e)
-        return true
+        # Linear scan of the allowlist. A handful of handlers makes a hash
+        # table pointless, and a name with no slot is ignored on purpose.
+        mut i = 0
+        while i < len(self.handlers):
+            mut slot = self.handlers[i]
+            if slot.name == name:
+                slot.h.handle(e)
+                return true
+            i = i + 1
+        return false
 
     pub def stats(self) -> str:
         return "Interpreter(renders=" + self.renders.to_str() + " handlers=" + len(self.handlers).to_str() + ") " + self.cache.stats()
+
+# Deepest-first hit test: the innermost box containing the point that names a
+# handler wins, which is what makes a button inside a panel behave.
+#
+# A FREE FUNCTION, not a method, and that is load-bearing rather than stylistic.
+# As a private recursive method returning str this hangs under --freestanding on
+# Cortex-M -- it runs correctly hosted, and the byte-identical logic as a free
+# function runs correctly on both. (Interpreter.paint is also private and
+# recursive but returns void, and is fine, so the trigger appears to be the
+# string return rather than the recursion alone.) Verified under
+# qemu-system-arm -M mps2-an385.
+#
+# Depth-bounded: a bare metal stack is a few KB, and a malformed tree must
+# degrade to a wrong answer rather than run off the end of it.
+pub def hit_test(box: LayoutBox, x: int, y: int, depth: int, wanted_event: str) -> str:
+    if depth > max_depth():
+        return ""
+    if not box.contains(x, y):
+        return ""
+    mut found = ""
+    mut i = 0
+    while i < len(box.children):
+        mut r = hit_test(box.children[i], x, y, depth + 1, wanted_event)
+        if r != "":
+            found = r
+        i = i + 1
+    if found != "":
+        return found
+    if box.event_name != wanted_event:
+        return ""
+    return box.handler
+
+# Register a host handler under the name UI content may reference.
+#
+# A free function because a method call does NOT auto-upcast a concrete class to
+# an interface, while a free function's parameter does -- and doing the upcast
+# by hand with `mut x: EventHandler = obj` would MOVE obj away from the caller.
+# NB: named register_handler, not register -- `register` is a C storage-class
+# keyword, and emitting it mangles the symbol and loses the interface upcast.
+pub def register_handler(it: Interpreter, name: str, h: EventHandler) -> void:
+    it.add_slot(name, h)
 
 # Render a tree to a concrete canvas without giving up ownership of it.
 #

@@ -10,8 +10,15 @@
 #      listed, or the return-path checker reports [F-3] on a function that in
 #      fact returns everywhere.
 
+# `event_name` and `handler` are deliberately separate strings, not one
+# combined field: `<button "..." @on_click(on_ok)>` binds a host handler
+# named "on_ok" to the "on_click" event specifically. Only "on_click" is
+# actually wired to dispatch today (toolkit.ui.interp has no lifecycle events
+# yet), but the AST already carries any event name a UI file names -- adding
+# a second wired-up event kind later is an interp.tr change, not a format
+# change or a re-parse of existing content.
 pub enum UiNode:
-    Element(tag: str, class_str: str, handler: str, children: List[Pointer[UiNode]])
+    Element(tag: str, class_str: str, event_name: str, handler: str, children: List[Pointer[UiNode]])
     Text(class_str: str, value: str)
 
 # The interpreter recurses, and a bare-metal target has a few KB of stack rather
@@ -32,9 +39,9 @@ pub def read_node(p: Pointer[UiNode]) -> UiNode:
         n = p.read()
     return n
 
-pub def new_element(tag: str, class_str: str, handler: str) -> Pointer[UiNode]:
+pub def new_element(tag: str, class_str: str, event_name: str, handler: str) -> Pointer[UiNode]:
     mut kids: List[Pointer[UiNode]] = []
-    return box_node(UiNode.Element(tag, class_str, handler, kids))
+    return box_node(UiNode.Element(tag, class_str, event_name, handler, kids))
 
 pub def new_text(class_str: str, value: str) -> Pointer[UiNode]:
     return box_node(UiNode.Text(class_str, value))
@@ -42,7 +49,7 @@ pub def new_text(class_str: str, value: str) -> Pointer[UiNode]:
 pub def count_nodes(p: Pointer[UiNode]) -> int:
     mut n = read_node(p)
     match n:
-        case UiNode.Element(tag, cls, handler, kids):
+        case UiNode.Element(tag, cls, evt, handler, kids):
             mut total = 1
             for c in kids:
                 total = total + count_nodes(c)
@@ -55,7 +62,7 @@ pub def count_nodes(p: Pointer[UiNode]) -> int:
 pub def tree_depth(p: Pointer[UiNode]) -> int:
     mut n = read_node(p)
     match n:
-        case UiNode.Element(tag, cls, handler, kids):
+        case UiNode.Element(tag, cls, evt, handler, kids):
             mut deepest = 0
             for c in kids:
                 mut d = tree_depth(c)
@@ -70,7 +77,7 @@ pub def tree_depth(p: Pointer[UiNode]) -> int:
 pub def class_of(p: Pointer[UiNode]) -> str:
     mut n = read_node(p)
     match n:
-        case UiNode.Element(tag, cls, handler, kids):
+        case UiNode.Element(tag, cls, evt, handler, kids):
             return cls
         case UiNode.Text(cls, value):
             return cls
@@ -86,10 +93,10 @@ pub def dump(p: Pointer[UiNode], indent: int) -> void:
 
     mut n = read_node(p)
     match n:
-        case UiNode.Element(tag, cls, handler, kids):
+        case UiNode.Element(tag, cls, evt, handler, kids):
             mut line = pad + tag + " [" + cls + "]"
             if handler != "":
-                line = line + " @" + handler
+                line = line + " @" + evt + "(" + handler + ")"
             print(line)
             for c in kids:
                 dump(c, indent + 1)

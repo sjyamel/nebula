@@ -11,6 +11,10 @@ language by actually building its compiler and compiling test programs against i
 reading documentation alone. Treat facts marked **verified** as tested; everything else is from
 docs/README and should be spot-checked before being relied on for anything load-bearing.
 
+**`tau_bugs.txt`** at the repo root is the running log of confirmed Tauraro compiler/SDK/docs
+defects, each reduced to a minimal repro. Check it before spending time re-diagnosing a hang or
+a confusing error — several of the entries there cost hours the first time.
+
 ## Getting a working compiler immediately
 
 **Use the installed Windows SDK. It is on PATH and it works.**
@@ -108,8 +112,11 @@ contradict the docs directly — the docs lose.
 across module boundaries all work. Two implementations of one interface confirmed working.
 
 **Collections.**
-- `Dict[str, def(Event) -> void]` **works** — the proposal's §5.5 handler table is valid as
-  designed. (The docs only ever confirm `Vec[...]`/`List[...]` of callables; `Dict` is fine too.)
+- `Dict[str, def(Event) -> void]` **works hosted** — storing and fetching a function value from a
+  Dict compiles and runs fine there. **But see `tau_bugs.txt` #1: calling any first-class function
+  value hangs under `--freestanding`**, which rules this pattern out for the bare-metal tier
+  despite compiling cleanly. The toolkit's handler bridge (`toolkit/ui/interp.tr`) uses an
+  `EventHandler` interface instead, specifically because of this.
 - `Dict[str, SomeClass]` works, as does `len(someDict)`.
 - `List[T]` supports index assignment (`px[i] = v`) — the framebuffer depends on this.
 - `List[u8]` works with explicit `255 as u8` casts.
@@ -162,13 +169,18 @@ toolkit/ui/          UiNode AST, parser, tree-walking interpreter, style cache
 toolkit/layout/       flexbox-subset layout engine
 toolkit/render/       Canvas trait + rasterizer primitives
 toolkit/render/hosted/  in-memory buffer backend (fast dev loop)
-toolkit/render/bare/    MMIO framebuffer backend (real hardware)
+toolkit/render/bare/    MMIO framebuffer backend (Cortex-M, UART-PPM)
+toolkit/render/uefi/    GOP linear-framebuffer backend (real display, primary target)
 toolkit/widgets/      Text, Panel, Button, List, Image
+toolkit/text/          baked bitmap font atlas + lookup (real glyph rendering, all 3 tiers)
 toolkit/input/         event types + PS/2 driver (bare) + host binding (dev)
 toolkit/transport/     UART push protocol (bare) + file/socket watch (hosted)
 toolkit/platform/      boot glue, allocator, timer — thin, OS-specific
 examples/hosted_demo/  std tier, loads + hot-reloads a UI file
-examples/bare_demo/    --freestanding, qemu-runnable
+examples/bare_demo/    --freestanding Cortex-M, qemu-system-arm + UART-PPM
+examples/uefi_demo/    --freestanding (no @entry) + hand-written zig UEFI stub,
+                        qemu-system-x86_64 + OVMF, real display window
+tools/fonts/           JetBrainsMono.ttf (SIL OFL 1.1) + its license -- font-baking source
 vendor/tauraroc/       the compiler binary + runtime/ headers it needs
 verified-examples/     small .tr files confirmed to compile+run in this session
 docs/proposal/          the actual spec (v2, current)
@@ -190,13 +202,52 @@ so `toolkit/types.tr` exists to hold shared vocabulary and import nothing):
 toolkit/types.tr              Color packing, Rect, Event        (imports nothing)
 toolkit/ui/ast.tr             UiNode enum, boxing, depth guard
 toolkit/ui/style.tr           utility tokens, Style, StyleCache
-toolkit/ui/parser.tr          indentation format -> UiNode
-toolkit/render/canvas.tr      the Canvas interface (3 methods)
+toolkit/ui/parser.tr          XML-like markup -> UiNode (see below)
+toolkit/render/canvas.tr      the Canvas interface (width/height/fill_rect/set_pixel)
 toolkit/render/hosted/buffer.tr  BufferCanvas + clipping + PPM
-toolkit/layout/flex.tr        build/measure/place, row+col+gap+pad+grow
-toolkit/ui/interp.tr          tree walk, painting, hit-test, handler allowlist
+toolkit/text/font_data.tr     GENERATED: baked bitmap glyph atlas (scripts/bake-font.ps1)
+toolkit/text/font.tr          Font: pixel_set(codepoint, col, row) lookup
+toolkit/layout/flex.tr        build/measure/place, row+col+gap+pad+grow (glyph size from font)
+toolkit/ui/interp.tr          tree walk, real glyph painting, hit-test, handler allowlist
 examples/hosted_demo/         main.tr + app.ui + app.reload.ui
 ```
+
+## UI markup format: XML-like, not indentation-based (changed 2026-09-03)
+
+The `.ui` format switched from an indentation-based syntax to angle-bracket markup, at the
+user's direction — they want this toolkit usable for real OS-level UI (they previously shipped a
+Rust UEFI DXE driver doing exactly that), and XML/HTML-shaped markup is what every editor already
+has syntax highlighting for. See `examples/hosted_demo/app.ui` for a live example. Shape:
+
+```
+<panel "flex-col p-4 gap-3 bg-slate">
+  <text "text-white">TAURARO UI TOOLKIT</text>
+  <panel "bg-red grow" />
+  <button "bg-amber grow" @on_click(on_ok)>
+    <text "text-black">OK</text>
+  </button>
+</panel>
+```
+
+- The class string is a single **bare** quoted literal — no `class="..."` attribute name. This
+  was a deliberate user choice (see the three options offered and picked in this session), not
+  an oversight; `class="..."` was on the table and rejected.
+- `@event(handler)` binds a host handler **name** to an event **name** — e.g. `@on_click(on_ok)`
+  registers "on_ok" against the "on_click" event specifically. These are two separate strings in
+  the AST (`UiNode.Element`'s `event_name` and `handler` fields), not one combined token, so a
+  second event kind (e.g. `on_load`, a lifecycle event) is an `interp.tr`-only change later, not
+  a format change. **Only `on_click` is wired to real dispatch today** —
+  `toolkit.types.event_name_for_kind()` is the one place that mapping lives; a node written as
+  `@on_load(...)` parses fine and simply never fires, because no lifecycle system exists yet.
+- `<text "...">inner text</text>` — the one tag whose body is read **verbatim** up to the literal
+  `</text>`, not re-parsed as markup. No mixed content anywhere else: every other tag's children
+  are always child elements, never interleaved text.
+- Self-closing (`<panel "..." />`) and open/close (`<panel "...">...</panel>`) are both supported;
+  `#` starts a line comment, recognized only between tags.
+- The parser (`toolkit/ui/parser.tr`) is a hand-written recursive-descent scanner over the whole
+  source string (not line-based like the old format), with the same "never crash on malformed
+  input" philosophy as before: unterminated tags, mismatched closing tag names, and bad `@event(`
+  syntax are all recorded as errors and recovered from rather than aborting the parse.
 
 ## Bare metal on Windows — the toolchain half is SOLVED and verified
 
@@ -237,29 +288,199 @@ entirely — maximum work, zero tool support. ARM/RISC-V is where the language a
 
 The open sub-problem is that **mps2-an385 has no display** — it is UART-only. See next section.
 
+## Bare metal: VERIFIED END TO END (2026-09-03)
+
+QEMU is installed (`SoftwareFreedomConservancy.QEMU`, at `C:\Program Files\qemu` — not
+automatically on PATH). The **entire toolkit now runs on bare metal**:
+
+```
+.\scriptsuild-bare.ps1 -Source examplesare_demo\main.tr
+qemu-system-arm -M mps2-an385 -nographic -kernel build-barepp.elf > out.ppm
+```
+
+`examples/bare_demo/` renders a 64x48 frame on a Cortex-M3 with no OS, no libc and no
+filesystem, streams it out the UART as a PPM, and reports
+`dispatch button=true padding=false hits=1`. Parser, style cache, flexbox layout, interpreter,
+rasteriser, hit-test and handler dispatch are the SAME toolkit source the hosted demo runs.
+Only two things are substituted: `BufferCanvas` (needs `io.file`) becomes `FrameBuffer`, and the
+UI file becomes a string compiled into the image.
+
+### Three freestanding compiler bugs found the hard way
+
+All three cost hours; none is in our code. Each was reduced to a minimal repro.
+
+1. **Calling ANY first-class function value hangs.** Not Dict-specific, not toolkit-specific:
+   `mut f: def(int) -> int = add1` then `f(41)` hangs in a standalone freestanding program.
+   Assigning the value works; *calling* it never returns. Works fine hosted.
+   **Consequence:** the proposal's 5.5 `Dict[str, def(Event) -> void]` handler table CANNOT
+   work bare-metal. The toolkit now uses a `pub interface EventHandler` instead — interface
+   vtable dispatch works on both tiers (the `Canvas` backend already proved it).
+2. **A private recursive method returning `str` hangs.** `Interpreter.hit` did; the
+   byte-identical logic as a free function (`hit_test`) does not. `Interpreter.paint` is also
+   private and recursive but returns `void` and is fine, so the trigger looks like the string
+   return, not the recursion. Keep recursive string-returning helpers as free functions.
+3. **`register` is a C keyword.** A `pub def register(...)` emitted as a C symbol gets mangled
+   to `_tr_fn_register` and *silently loses the interface upcast*, producing a confusing
+   `passing 'char *' to parameter of incompatible type 'TrStr'`. Avoid C keywords as public
+   function names (`register`, `auto`, `extern`, `inline`, `restrict`, ...).
+
+### The bump allocator in the SDK example is subtly broken — do not copy it
+
+`examples/freestanding/mps2_pure.tr` defines `@realloc` as `return heap_alloc(n)`: it allocates
+fresh memory and **never copies the old contents**. That example never grows a collection so the
+bug is invisible there, but every `List`/`Dict` append reallocs. The symptom is maddening — the
+parser reports `parse: ok` and returns **exactly one node**, holding the *last* line of input.
+A correct arena for this toolkit needs all four of:
+
+- **realloc must COPY** the old bytes.
+- **grow in place when the block is the newest allocation** (track `_last_ptr`), or repeated
+  appends are O(n^2) and a 64x48 framebuffer never finishes on an emulated M3.
+- **never move `_heap_next` backwards** on a shrinking realloc, or the freed tail is handed out
+  while the block is still live — this showed up as a hang in an unrelated `Dict` lookup.
+- **never return a zero-length block**; round up and enforce a minimum, or two live objects
+  share an address.
+
+Also: the bare `FrameBuffer` uses `Vec[int].init(w*h)` rather than `List[int]` + `append`,
+because `Vec` reserves the exact final size up front and never reallocs.
+
+## UEFI: real display, VERIFIED END TO END (2026-09-03) — now the primary target
+
+Direction changed deliberately (user has prior experience shipping a Rust UEFI DXE driver and
+wants this toolkit usable for real OS-level UI, e.g. a boot-time login screen — the display path
+matters more here than the Cortex-M/UART route). **UEFI is a materially better target than
+Cortex-M for this project**, and, contrary to first assumption, it is *less* work, not more:
+firmware already did reset vectors, memory setup, and the boot menu, and it hands a real
+already-mapped linear framebuffer (GOP) directly to the caller — no MMIO display driver to write,
+no PPM-over-UART round trip, no `@entry`/`--emit-ld` at all.
+
+```
+.\scripts\run-uefi.ps1
+```
+
+builds `examples/uefi_demo/` and boots it under `qemu-system-x86_64 -M q35` with OVMF firmware
+(shipped inside the QEMU install, nothing extra to fetch), opening a **real graphical window**
+showing the toolkit's actual render — parser, style cache, layout, interpreter, `EventHandler`
+dispatch, all unchanged from the Cortex-M tier. `-NoWindow` runs headless and captures an
+automated screenshot via QEMU's monitor `screendump` command for verification without a human
+watching.
+
+### The shape: Tauraro is not the boot glue here — a thin zig stub is
+
+Tauraro's `--freestanding` only generates boot glue for Cortex-M and RISC-V (see below); it does
+not know the PE/COFF UEFI ABI or protocol tables, and does not need to, because UEFI firmware
+already **is** the boot glue. The split:
+
+- `examples/uefi_demo/boot.zig` — ~50 lines, hand-written. The real UEFI entry point. Calls
+  `BootServices.allocatePool()` for a heap block, locates the GOP protocol for a framebuffer
+  pointer + resolution + `PixelsPerScanLine`, then calls two Tauraro-exported functions.
+- `examples/uefi_demo/render.tr` — plain Tauraro, compiled with `tauraroc render.tr
+  --freestanding --emit c` (**no `@entry`, no `--emit-ld`** — confirmed unnecessary: a
+  `pub export def` with no `@entry` anywhere in the program compiles and links fine standalone).
+  Exports `tauraro_heap_init(base, size)` and `tauraro_ui_render(fb, width, height, pitch)`. Still
+  needs `@allocator`/`@free`/`@realloc`/`@calloc` — `--freestanding` always defines
+  `TAURARO_KERNEL`, which `#error`s at actual C-compile time (not at `--emit c` time) if those
+  aren't supplied, regardless of `@entry`. Same proven copy+grow-in-place+no-shrink+no-zero-block
+  allocator design as the Cortex-M tier (tau_bugs.txt #4), just parameterized on a pool pointer
+  from `AllocatePool` instead of a hardcoded MMIO-adjacent SRAM address.
+- `toolkit/render/uefi/gop.tr` — the third `Canvas` backend. The thinnest of the three: GOP's
+  common `PixelBlueGreenRedReserved8BitPerColor` mode stores bytes `[B,G,R,reserved]`, which read
+  as a little-endian 32-bit word is exactly `0x00RRGGBB` — the same packing `toolkit.types.rgb()`
+  already produces, so a `Style` color writes straight into the framebuffer with zero conversion.
+  (If a target ever reports the RGB-ordered variant instead, colors would need byte-swapping —
+  not hit yet, not handled.)
+- `scripts/build-uefi.ps1` — `tauraroc --freestanding --emit c`, then **one** `zig build-exe`
+  invocation mixing the `.zig` stub and the generated `.c` files directly (`build-exe` accepts
+  both; no separate object-file or linker step needed).
+- `scripts/run-uefi.ps1` — boots it under QEMU + OVMF, with the `-serial file:`-style robustness
+  already learned from the Cortex-M runner script.
+
+### Two new bugs found getting here (full detail in `tau_bugs.txt` #12)
+
+- zig's `x86_64-uefi` target legitimately predefines `_WIN32`/`_WIN64`/`_MSC_VER` (UEFI really
+  does share the Microsoft x64 ABI and PE format), but `tauraro_rt.h` treats bare `_WIN32` as
+  "real hosted Windows, `windows.h`/`psapi`/`bcrypt` are available" without checking
+  `TAURARO_KERNEL` first, so freestanding UEFI builds fail with `'windows.h' file not found`
+  unless those three macros are explicitly undefined at compile time
+  (`-cflags -U_WIN32 -U_WIN64 -U_MSC_VER --` bracketed before the `.c` sources in the
+  `zig build-exe` invocation — a bare top-level `-U_WIN32` is rejected by `build-exe`).
+- `New-Object System.Drawing.Bitmap($w * $Scale, $h * $Scale)` — PowerShell's
+  parenthesized-constructor shorthand for `New-Object` only reliably evaluates bare variables
+  inside the parens, not expressions; use `-ArgumentList` explicitly instead. Not a Tauraro bug,
+  but cost real time in `scripts/ppm-to-png.ps1`.
+- (Also relearned, not new: `Start-Process -ArgumentList` with a PowerShell array does not
+  reliably quote elements containing spaces in PS 5.1 — both the OVMF path and the ESP directory
+  are typically under `C:\Program Files\...`. Build one pre-quoted string instead, same pattern
+  `build-bare.ps1`/`build-uefi.ps1` already used for the C-compiler invocations.)
+
+## Text rendering (Phase 6): DONE — real bitmap font on all three tiers (2026-09-03)
+
+Real, legible text now renders on hosted, Cortex-M, and UEFI — replacing the old
+one-block-per-character placeholder. The approach: **bake a TTF into a fixed bitmap glyph atlas
+offline, ship only the resulting byte data.** Tauraro's stdlib has zero font/curve-rasterizer
+support (confirmed by searching `std/`), and real TTF outlines are quadratic Beziers wanting
+float/fixed-point scanline rasterization — a large, risky thing to write from scratch and get
+right on freestanding targets that also have no filesystem to load a `.ttf` from at runtime. A
+baked atlas turns "render text" into a lookup + blit: no curve math, no float dependency,
+identical on all three tiers because it's just data.
+
+- **Font source:** `tools/fonts/JetBrainsMono.ttf` (SIL OFL 1.1, license alongside it). No
+  Python in this environment — baking uses `scripts/bake-font.ps1` and .NET's `System.Drawing`
+  (GDI+): renders each glyph supersampled 4x with real antialiasing, then box-downsamples back
+  to a crisp 1-bit-per-pixel 8x14 cell. Covers ASCII 32–126 (95 glyphs), emits
+  `toolkit/text/font_data.tr` — 1330 bytes as one `List[u8]` literal (confirmed compiling fine
+  at this size; no issue at this scale).
+- **`toolkit/text/font.tr`** — the lookup: `Font.pixel_set(codepoint, col, row) -> bool`. An
+  out-of-range codepoint or pixel returns `false` unconditionally (renders as blank space, never
+  a crash) — text content is not trusted input.
+- **`Canvas` interface gained a 4th method**, `set_pixel(x, y, color)` — a baked glyph is an
+  irregular per-pixel pattern, `fill_rect` alone can't draw one. Deliberately NOT a
+  `draw_glyph(codepoint, ...)` method: that would couple every backend to font lookup. All three
+  backends (`BufferCanvas`, `FrameBuffer`, `GopCanvas`) implement it; `interp.paint_text` does
+  the font lookup and calls `set_pixel` per foreground bit.
+- **`toolkit.layout.flex`'s `glyph_w()`/`glyph_h()`** — previously hardcoded placeholders (6x10)
+  — now delegate to the real baked font cell size (8x14), so layout automatically matches what
+  gets painted with zero other changes.
+- Interpreter now owns a `Font` (loaded once in `Interpreter.init()`), not passed around
+  separately.
+
+**A real, deep bug found and fixed getting here** (full detail in `tau_bugs.txt` #4's update):
+`toolkit/render/bare/framebuffer.tr`'s `emit_ppm` allocated a FRESH `StringBuilder` per row and
+never freed any of them (bump allocator) — on a bigger canvas with real text this accumulated
+enough that a `StringBuilder` being grown was no longer the newest allocation, so the realloc
+slow path's read ran past `_heap_next` into unmapped memory: a Cortex-M bus fault with no
+handler installed, which presents as a silent hang with zero further UART output. Fixed by
+reusing one `StringBuilder` via `.clear()` (resets length in place, no realloc) across all rows,
+and by using `.as_str()` instead of `.to_string().as_str()` (the latter allocates a fresh copy
+on every call).
+
+**A second, NOT fully root-caused bug also found on the Cortex-M tier** (`tau_bugs.txt` #13):
+certain specific packed RGB color values (amber `0xF59E0B`, violet `0x8B5CF6`), certain
+same-row color combinations, and certain canvas widths (96 hangs, 88 does not, otherwise
+identical) each independently trigger the same kind of silent hang — confirmed present hosted
+NOT and on UEFI NOT (both render amber/violet correctly), so this is specific to
+`--freestanding`/thumb-freestanding-eabi/cortex_m3. Worked around in `examples/bare_demo/` by
+using only colors and a canvas width empirically confirmed to complete; the underlying mechanism
+is still unknown and would need disassembly of the generated code to chase further.
+
 ## What's next, highest value first
 
-1. **Install QEMU (needs an admin terminal), then run the shipped `mps2_pure` ELF.** This is the
-   last unproven link in the bare-metal chain — the build side is already verified above.
+1. **A real login-screen demo on UEFI** — the user's actual stated goal (they previously shipped
+   a Rust DXE driver doing exactly this). `examples/uefi_demo/` now has real rendered text; a
+   real screen wants text INPUT (a UEFI Simple Text Input / Simple Pointer protocol driving
+   `Event`s through the existing `EventHandler` dispatch — the plumbing already exists
+   end-to-end) and a text field widget.
 
-2. **Port the toolkit core to `--freestanding` and dump the framebuffer over UART.** This is the
-   highest-value next milestone and it needs **no display driver at all**: render into a RAM
-   framebuffer exactly as `BufferCanvas` does, then stream the PPM out the UART sink, redirect
-   qemu's `-nographic` stdout to a `.ppm`, and open it. That proves the entire stack — freestanding
-   tier, pluggable allocator, parser, style cache, layout, interpreter, rasterizer — on real bare
-   metal, while deferring the one genuinely large piece (a display driver) until it is the only
-   thing left. Expect friction in two places: everything in `toolkit/` leans on heap types
-   (`List`, `Dict`, `str`, `StringBuilder`), so a bump allocator that never frees will need a
-   per-frame arena reset (proposal §5.6); and `int` is 64-bit, so a `List[int]` framebuffer costs
-   8 bytes/pixel — prefer `List[u8]` with a palette, or a small resolution, for the first attempt.
+2. **Per-frame arena reset (proposal 5.6).** The bump allocator never frees on any freestanding
+   tier, so today's demos are strictly single-frame. Needed before any animation, redraw, or
+   input-driven live-reload loop on bare metal or UEFI.
 
-3. **Only then decide the display path.** Ranked by effort: RISC-V `virt` + virtio-gpu keeps
-   Tauraro's generated boot glue (`--target embedded-riscv64`) but needs a real virtqueue driver;
-   ARM `versatilepb` + the PL110 LCD gives a trivially simple linear framebuffer but is ARMv5, so
-   the Cortex-M `@entry` glue and generated linker script no longer fit. Step 2 will surface the
-   memory and allocator realities that should decide this — don't pick before then.
-4. **Text rendering (Phase 6).** `interp.paint_text` currently fills one block per non-space
-   character on the real glyph advance. Layout and positioning are correct; only the glyph bitmaps
-   are missing, so a fixed-width bitmap font drops in without touching layout.
-5. **Diffing (Phase 5)** — re-render currently repaints everything.
-6. **Transport (Phase 8)** — hosted is a file read today; there is no watch loop and no UART path.
+3. **Diffing (Phase 5)** — re-render currently repaints everything.
+4. **Transport (Phase 8)** — hosted is a file read today; there is no watch loop and no UART path,
+   and now also no "read the next UI file from an EFI System Partition" path for UEFI.
+
+### Cortex-M/UART tier — kept working, no longer the priority
+
+Still fully functional (`scripts/build-bare.ps1` / `scripts/run-bare.ps1`,
+`examples/bare_demo/`) and worth keeping green as a regression check — it's the only tier that
+exercises Tauraro's own generated boot glue (`@entry`/`--emit-ld`) — but no further investment
+planned unless a real Cortex-M target becomes relevant again.

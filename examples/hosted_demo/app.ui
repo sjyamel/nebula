@@ -1,14 +1,19 @@
 # The UI is data. Editing this file and re-running the interpreter changes what
 # renders, with no rebuild of the toolkit and no restart of the host process.
 
-panel "flex-col p-4 gap-3 bg-slate"
-  text "text-white" "TAURARO UI TOOLKIT"
-  panel "flex-row gap-3 h-90"
-    panel "bg-red grow"
-    panel "bg-green grow"
-    panel "bg-blue w-60"
-  panel "flex-row gap-3 h-40 p-3 bg-steel"
-    button "bg-amber grow" @on_ok
-      text "text-black" "OK"
-    button "bg-violet grow" @on_cancel
-      text "text-white" "CANCEL"
+<panel "flex-col p-4 gap-3 bg-slate">
+  <text "text-white">TAURARO UI TOOLKIT</text>
+  <panel "flex-row gap-3 h-90">
+    <panel "bg-red grow" />
+    <panel "bg-green grow" />
+    <panel "bg-blue w-60" />
+  </panel>
+  <panel "flex-row gap-3 h-40 p-3 bg-steel">
+    <button "bg-amber grow" @on_click(on_ok)>
+      <text "text-white">OK</text>
+    </button>
+    <button "bg-violet grow" @on_click(on_cancel)>
+      <text "text-white">CANCEL</text>
+    </button>
+  </panel>
+</panel>

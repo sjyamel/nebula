@@ -1,0 +1,94 @@
+# toolkit.render.uefi.gop — the UEFI Graphics Output Protocol Canvas backend.
+#
+# Unlike the bare-metal MPS2 target, UEFI hands the firmware's caller a real,
+# already-memory-mapped linear framebuffer -- there is no MMIO UART sink to
+# stream a PPM through and no display driver to write, because the firmware
+# already brought one up. This backend is the thinnest of the three Canvas
+# implementations: write the packed color straight into the buffer.
+#
+# Pixel format: UEFI's PixelBlueGreenRedReserved8BitPerColor mode (the common
+# default under OVMF/QEMU) stores each pixel as bytes [B, G, R, reserved] in
+# memory. Read as a little-endian 32-bit word, that is exactly 0x00RRGGBB --
+# the same packing toolkit.types.rgb() already produces. So a Style color can
+# be written to the framebuffer with no conversion, PROVIDED the mode really
+# is BGRA. If a target ever reports PixelRedGreenBlueReserved8BitPerColor
+# instead, the caller must byte-swap R and B before calling fill_rect -- this
+# backend does not detect or correct for that itself.
+#
+# `pitch` is in PIXELS (UEFI's PixelsPerScanLine), not bytes -- it can exceed
+# `width` when the hardware pads scanlines for alignment, so it must be used
+# for row addressing instead of `width` or rows after the first will alias.
+
+from toolkit.render.canvas import Canvas
+
+pub class GopCanvas implements Canvas:
+    pub fb:    Pointer[u32]
+    pub w:     int
+    pub h:     int
+    pub pitch: int
+
+extend GopCanvas:
+    pub def init(fb: Pointer[u32], w: int, h: int, pitch: int) -> GopCanvas:
+        mut c = GopCanvas()
+        c.fb = fb
+        c.w = w
+        c.h = h
+        c.pitch = pitch
+        return c
+
+    pub def width(self) -> int:
+        return self.w
+
+    pub def height(self) -> int:
+        return self.h
+
+    # Bounds are clamped, not trusted, same as the other two backends: this
+    # buffer is real physical/firmware-reserved memory, and an out-of-range
+    # write here corrupts something the platform owns, not just our own heap.
+    pub def fill_rect(self, x: int, y: int, w: int, h: int, color: int) -> void:
+        if w <= 0:
+            return
+        if h <= 0:
+            return
+
+        mut x0 = x
+        mut y0 = y
+        mut x1 = x + w
+        mut y1 = y + h
+
+        if x0 < 0:
+            x0 = 0
+        if y0 < 0:
+            y0 = 0
+        if x1 > self.w:
+            x1 = self.w
+        if y1 > self.h:
+            y1 = self.h
+
+        if x0 >= x1:
+            return
+        if y0 >= y1:
+            return
+
+        mut cw = color as u32
+        unsafe:
+            mut yy = y0
+            while yy < y1:
+                mut row = yy * self.pitch
+                mut xx = x0
+                while xx < x1:
+                    self.fb.offset(row + xx).write(cw)
+                    xx = xx + 1
+                yy = yy + 1
+
+    pub def set_pixel(self, x: int, y: int, color: int) -> void:
+        if x < 0:
+            return
+        if y < 0:
+            return
+        if x >= self.w:
+            return
+        if y >= self.h:
+            return
+        unsafe:
+            self.fb.offset(y * self.pitch + x).write(color as u32)
