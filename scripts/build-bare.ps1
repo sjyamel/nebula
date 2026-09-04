@@ -30,7 +30,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$sdk = "C:\Users\HomePC\.taupkg\bin\tauraroc-windows-x64"
+# Was hardcoded to a specific machine's home directory (C:\Users\HomePC\...),
+# which only ever worked on the one machine that string happened to match.
+# $env:USERPROFILE resolves to whichever user is actually running this.
+$sdk = Join-Path $env:USERPROFILE ".taupkg\bin\tauraroc-windows-x64"
 $tauraroc = Join-Path $sdk "tauraroc.exe"
 $zig = Join-Path $sdk "zig\zig.exe"
 

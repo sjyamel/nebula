@@ -1,0 +1,78 @@
+# examples/desktop_demo — the toolkit in a REAL cross-platform window, live input.
+#
+# The gap the other three tiers can't fill: hosted dumps a PPM file, bare-metal
+# streams a PPM over UART, UEFI paints one static frame into a firmware
+# framebuffer with no OS event loop. This is an actual OS window you can click on,
+# using SDL2 as a thin wrapper (toolkit.render.desktop.sdl_canvas) -- everything
+# above the Canvas seam (parser, style cache, layout, interpreter, widgets,
+# EventHandler dispatch) is the EXACT SAME toolkit source the other three demos
+# run, imported unchanged.
+#
+# Run from the repository root (after building SDL2 into PATH / alongside the
+# exe -- see the SDL2 mingw64 package, or ship libSDL2.dll next to the binary):
+#   tauraroc --run examples\desktop_demo\main.tr
+
+from toolkit.types import Event, EventHandler
+from toolkit.ui.parser import UiParser
+from toolkit.ui.interp import Interpreter, render_to, register_handler
+from toolkit.render.desktop.sdl_canvas import SdlCanvas, poll_event, last_click
+from toolkit.render.desktop.sdl_bindings import SDL_Delay
+
+pub class OkHandler implements EventHandler:
+    pub label: str
+
+extend OkHandler:
+    pub def init(label: str) -> OkHandler:
+        mut h = OkHandler()
+        h.label = label
+        return h
+
+    pub def handle(self, e: Event) -> void:
+        print("  [host] " + self.label + " fired at (" + e.x.to_str() + "," + e.y.to_str() + ")")
+
+def main():
+    mut w = 320
+    mut h = 240
+    mut canvas = SdlCanvas.open("Tauraro UI Toolkit -- desktop_demo", w, h)
+    if not canvas.ok():
+        print("failed to open an SDL window/renderer")
+        return
+
+    mut it = Interpreter.init()
+    mut ok = OkHandler.init("on_ok")
+    mut cancel = OkHandler.init("on_cancel")
+    register_handler(it, "on_ok", ok)
+    register_handler(it, "on_cancel", cancel)
+
+    mut src = "<panel \"flex-col p-4 gap-3 bg-slate\">\n  <text \"text-white\">TAURARO ON A REAL WINDOW</text>\n  <panel \"flex-row gap-3 h-90\">\n    <panel \"bg-red grow\" />\n    <panel \"bg-green grow\" />\n    <panel \"bg-blue w-60\" />\n  </panel>\n  <panel \"flex-row gap-3 h-40 p-3 bg-steel\">\n    <button \"bg-amber grow\" @on_click(on_ok)>\n      <text \"text-black\">OK</text>\n    </button>\n    <button \"bg-violet grow\" @on_click(on_cancel)>\n      <text \"text-white\">CANCEL</text>\n    </button>\n  </panel>\n</panel>\n"
+
+    mut p = UiParser.init()
+    mut tree = p.parse(src)
+    p.report()
+
+    print("window open -- click OK/CANCEL, close the window to quit")
+
+    mut running = true
+    while running:
+        # Drain every queued event before redrawing, not just one per frame --
+        # otherwise a burst of clicks (or the close button) can lag behind by
+        # multiple frames on a slow redraw.
+        mut draining = true
+        while draining:
+            mut code = poll_event()
+            if code == 0:
+                draining = false
+            elif code == 1:
+                running = false
+                draining = false
+            elif code == 2:
+                it.dispatch(last_click())
+
+        if running:
+            canvas.clear(0x0B1120)
+            render_to(it, tree, canvas)
+            canvas.present()
+            unsafe: SDL_Delay(16 as Uint32)
+
+    canvas.close()
+    print("window closed")
