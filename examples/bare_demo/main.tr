@@ -25,33 +25,47 @@ from toolkit.render.bare.framebuffer import FrameBuffer
 
 # ---- Bump allocator over the MPS2-AN385 SRAM window ----
 #
-# The @realloc here COPIES, and that is not incidental. The SDK's own
-# examples/freestanding/mps2_pure.tr defines it as "return heap_alloc(n)" --
-# fresh memory, old contents never copied. That example never grows a
-# collection so the bug is invisible there, but every List/Dict append in this
-# toolkit reallocs, and without the copy each growth silently discards
-# everything appended so far. The symptom is a parser that reports "ok" and
-# returns exactly one node.
+# Header-based design (2026-09-04), replacing the earlier _last_ptr-only
+# version. That version tracked only the SINGLE most-recently-allocated
+# block; reallocing anything OLDER than that fell back to a "copy what's
+# available, clamped to _heap_next" path that could only copy up to
+# _heap_next - pu bytes -- if the new size n was bigger than that, the tail
+# of the new block was left UNINITIALISED (never written, not zeroed
+# either). That uninitialised tail is exactly consistent with tau_bugs.txt
+# #13's unroot-caused hang: specific colors/canvas widths shift allocation
+# sizes enough to hit this case, and if the garbage tail is later read as a
+# null-terminated string (print()'s own path), a `while byte != 0` loop can
+# run off the end of the SRAM window into a bus fault with no handler --
+# silent hang, zero further UART output, exactly the symptom reported.
 #
-# Still a bump allocator: free is a no-op and memory is never reused, so a real
-# device loop needs the per-frame arena reset from the proposal's 5.6.
+# The fix: an 8-byte size header immediately before every returned block, so
+# heap_realloc can always recover a pointer's TRUE allocated size and copy
+# the FULL old contents -- for ANY block, not just the most recent one.
+# Every realloc must still satisfy all four of:
+#   a) COPY the old bytes (now always the true old size, not a clamped guess).
+#   b) GROW IN PLACE when the block is the newest allocation (O(1) instead of
+#      O(n^2) for a List built by repeated append).
+#   c) NEVER move _heap_next backwards on a shrink (the freed tail must never
+#      be handed to the next allocation while this block is still live).
+#   d) NEVER return a zero-length block (round up, minimum 8).
 
 mut _heap_next: usize = 0x20080000 as usize
-mut _last_ptr:  usize = 0 as usize
+
+def _heap_round(n: usize) -> usize:
+    mut r = n
+    if r < (8 as usize):
+        r = 8 as usize
+    return ((r + (7 as usize)) / (8 as usize)) * (8 as usize)
 
 @allocator
 def heap_alloc(n: usize) -> Pointer[u8]:
     unsafe:
-        # Round to 8 and never hand out a zero-length block. A 0-byte request
-        # that left _heap_next unmoved would return the SAME address to the
-        # next caller, putting two live objects on the same bytes.
-        mut sz = ((n + 7) / 8) * 8
-        if sz == (0 as usize):
-            sz = 8 as usize
-        mut base = _heap_next
-        _last_ptr = base
-        _heap_next = base + sz
-        return base as Pointer[u8]
+        mut sz = _heap_round(n)
+        mut hdr = _heap_next as Pointer[usize]
+        hdr.write(sz)
+        mut p = (_heap_next + (8 as usize)) as Pointer[u8]
+        _heap_next = _heap_next + (8 as usize) + sz
+        return p
 
 @free
 def heap_free(p: Pointer[u8]):
@@ -64,49 +78,28 @@ def heap_realloc(p: Pointer[u8], n: usize) -> Pointer[u8]:
         if pu == (0 as usize):
             return heap_alloc(n)
 
-        # Fast path: this block is the most recent allocation, so extend the
-        # arena over it instead of copying. A list being appended to in a loop
-        # is almost always the newest block, which keeps growth O(1).
-        if pu == _last_ptr:
-            mut gsz = ((n + 7) / 8) * 8
-            if gsz == (0 as usize):
-                gsz = 8 as usize
-            # Only ever GROW. Moving _heap_next backwards on a shrinking
-            # realloc would hand the tail to the next allocation while this
-            # block is still live.
-            mut want = pu + gsz
-            if want > _heap_next:
-                _heap_next = want
+        mut old_hdr = (pu - (8 as usize)) as Pointer[usize]
+        mut old_sz = old_hdr.read()
+        mut sz = _heap_round(n)
+
+        if sz <= old_sz:
+            return p   # (c) shrink in place, never move _heap_next backward
+
+        if pu + old_sz == _heap_next:
+            # (b) grow in place: this block is the newest allocation, so the
+            # bump pointer sits immediately after it -- just extend the arena.
+            _heap_next = _heap_next + (sz - old_sz)
+            old_hdr.write(sz)
             return p
 
-        # Slow path: an older block, whose size we do not track. Copy up to n
-        # (the NEW size) bytes -- but CLAMPED to _heap_next - pu, never more.
-        #
-        # This clamp is load-bearing, not defensive. The original version of
-        # this allocator copied a flat `n` bytes unconditionally, reasoning
-        # that "the source is always inside the SRAM window" -- true only
-        # while n happens to be small. Once real content (font-rendered text,
-        # more PPM rows) drove enough interleaved growth that a StringBuilder
-        # being extended was no longer the most-recent allocation, the slow
-        # path's read of `p .. p+n` ran PAST _heap_next into memory nothing
-        # had touched yet -- a Cortex-M bus fault with no handler installed,
-        # which presents as a silent hang with zero further UART output.
-        # Reduced to: emit_ppm on a 96x56 canvas with one <text> row hangs
-        # after ~40 of 56 rows, every time, at the same row. Clamping the
-        # copy to what has actually been allocated so far (_heap_next) makes
-        # the source range always valid, at the cost of nothing -- bytes
-        # beyond the true old size were always "uninitialised tail that
-        # nothing reads" garbage anyway, whether copied from mapped or
-        # unmapped memory.
+        # General case: an older block. old_sz is now the TRUE size (read
+        # from its own header, not clamped/guessed), so the full copy is
+        # always in-bounds and never leaves an uninitialised tail.
         mut fresh = heap_alloc(n)
-        mut avail = _heap_next - pu
-        mut copy_n = n
-        if avail < copy_n:
-            copy_n = avail
-        mut i = 0
-        while i < (copy_n as int):
+        mut i: usize = 0 as usize
+        while i < old_sz:
             fresh.offset(i).write(p.offset(i).read())
-            i = i + 1
+            i = i + (1 as usize)
         return fresh
 
 @calloc
@@ -114,10 +107,11 @@ def heap_calloc(n: usize, sz: usize) -> Pointer[u8]:
     unsafe:
         mut total = n * sz
         mut q = heap_alloc(total)
-        mut i = 0
-        while i < (total as int):
+        mut rounded = _heap_round(total)
+        mut i: usize = 0 as usize
+        while i < rounded:
             q.offset(i).write(0 as u8)
-            i = i + 1
+            i = i + (1 as usize)
         return q
 
 # ---- print() sink: CMSDK UART0 ----

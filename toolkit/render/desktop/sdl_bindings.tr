@@ -1,0 +1,2372 @@
+# Auto-generated FFI bindings for C:/msys64/mingw64/include/SDL2/SDL.h (tauraro-bindgen).
+
+# Opaque fallbacks: types referenced by this header but defined in a system or
+# sub-header (bound as opaque handles; pass by Pointer). Verify by-value layout.
+type pfnSDL_CurrentBeginThread = Pointer[void]
+type pfnSDL_CurrentEndThread = Pointer[void]
+
+type SDL_bool = c_int
+type Sint8 = c_int8_t
+type Uint8 = c_uint8_t
+type Sint16 = c_int16_t
+type Uint16 = c_uint16_t
+type Sint32 = c_int32_t
+type Uint32 = c_uint32_t
+type Sint64 = c_int64_t
+type Uint64 = c_uint64_t
+type SDL_DUMMY_ENUM = c_int
+type SDL_malloc_func = Pointer[void]    # C function pointer
+type SDL_calloc_func = Pointer[void]    # C function pointer
+type SDL_realloc_func = Pointer[void]    # C function pointer
+type SDL_free_func = Pointer[void]    # C function pointer
+type SDL_CompareCallback = Pointer[void]    # C function pointer
+type SDL_iconv_t = Pointer[_SDL_iconv_t]
+type SDL_main_func = Pointer[void]    # C function pointer
+type SDL_AssertState = c_int
+type SDL_AssertionHandler = Pointer[void]    # C function pointer
+type SDL_SpinLock = c_int
+type SDL_errorcode = c_int
+type SDL_threadID = c_ulong
+type SDL_TLSID = c_uint
+type SDL_ThreadPriority = c_int
+type SDL_ThreadFunction = Pointer[void]    # C function pointer
+type SDL_TLSDestructorCallback = Pointer[void]    # C function pointer
+type SDL_AudioFormat = Uint16
+type SDL_AudioCallback = Pointer[void]    # C function pointer
+type SDL_AudioFilter = Pointer[void]    # C function pointer
+type SDL_AudioDeviceID = Uint32
+type SDL_AudioStatus = c_int
+type SDL_PixelType = c_int
+type SDL_BitmapOrder = c_int
+type SDL_PackedOrder = c_int
+type SDL_ArrayOrder = c_int
+type SDL_PackedLayout = c_int
+type SDL_PixelFormatEnum = c_int
+type SDL_BlendMode = c_int
+type SDL_BlendOperation = c_int
+type SDL_BlendFactor = c_int
+type SDL_blit = Pointer[void]    # C function pointer
+type SDL_YUV_CONVERSION_MODE = c_int
+type SDL_WindowFlags = c_int
+type SDL_WindowEventID = c_int
+type SDL_DisplayEventID = c_int
+type SDL_DisplayOrientation = c_int
+type SDL_FlashOperation = c_int
+type SDL_GLContext = Pointer[void]
+type SDL_GLattr = c_int
+type SDL_GLprofile = c_int
+type SDL_GLcontextFlag = c_int
+type SDL_GLcontextReleaseFlag = c_int
+type SDL_GLContextResetNotification = c_int
+type SDL_HitTestResult = c_int
+type SDL_HitTest = Pointer[void]    # C function pointer
+type SDL_Scancode = c_int
+type SDL_Keycode = Sint32
+type SDL_KeyCode = c_int
+type SDL_Keymod = c_int
+type SDL_SystemCursor = c_int
+type SDL_MouseWheelDirection = c_int
+type SDL_JoystickGUID = SDL_GUID
+type SDL_JoystickID = Sint32
+type SDL_JoystickType = c_int
+type SDL_JoystickPowerLevel = c_int
+type SDL_SensorID = Sint32
+type SDL_SensorType = c_int
+type SDL_GameControllerType = c_int
+type SDL_GameControllerBindType = c_int
+type SDL_GameControllerAxis = c_int
+type SDL_GameControllerButton = c_int
+type SDL_TouchID = Sint64
+type SDL_FingerID = Sint64
+type SDL_TouchDeviceType = c_int
+type SDL_GestureID = Sint64
+type SDL_EventType = c_int
+type SDL_eventaction = c_int
+type SDL_EventFilter = Pointer[void]    # C function pointer
+type SDL_HintPriority = c_int
+type SDL_HintCallback = Pointer[void]    # C function pointer
+type SDL_LogCategory = c_int
+type SDL_LogPriority = c_int
+type SDL_LogOutputFunction = Pointer[void]    # C function pointer
+type SDL_MessageBoxFlags = c_int
+type SDL_MessageBoxButtonFlags = c_int
+type SDL_MessageBoxColorType = c_int
+type SDL_MetalView = Pointer[void]
+type SDL_PowerState = c_int
+type SDL_RendererFlags = c_int
+type SDL_ScaleMode = c_int
+type SDL_TextureAccess = c_int
+type SDL_TextureModulate = c_int
+type SDL_RendererFlip = c_int
+type WindowShapeMode = c_int
+type SDL_WindowsMessageHook = Pointer[void]    # C function pointer
+type SDL_TimerCallback = Pointer[void]    # C function pointer
+type SDL_TimerID = c_int
+
+class _SDL_iconv_t:
+    pass    # opaque handle
+
+@value_type
+class SDL_AssertData:
+    pub always_ignore: c_int
+    pub trigger_count: c_uint
+    pub condition: Pointer[char]
+    pub filename: Pointer[char]
+    pub linenum: c_int
+    pub function: Pointer[char]
+    pub next: Pointer[SDL_AssertData]
+
+@value_type
+class SDL_atomic_t:
+    pub value: c_int
+
+class SDL_mutex:
+    pass    # opaque (forward-declared)
+
+class SDL_semaphore:
+    pass    # opaque (forward-declared)
+
+class SDL_sem:
+    pass    # opaque handle
+
+class SDL_cond:
+    pass    # opaque (forward-declared)
+
+class SDL_Thread:
+    pass    # opaque (forward-declared)
+
+@value_type
+class SDL_RWops:
+    pub size: Pointer[void]
+    pub seek: Pointer[void]
+    pub read: Pointer[void]
+    pub write: Pointer[void]
+    pub close: Pointer[void]
+    pub type: Uint32
+
+@value_type
+class SDL_AudioSpec:
+    pub freq: c_int
+    pub format: SDL_AudioFormat
+    pub channels: Uint8
+    pub silence: Uint8
+    pub samples: Uint16
+    pub padding: Uint16
+    pub size: Uint32
+    pub callback: SDL_AudioCallback
+    pub userdata: Pointer[void]
+
+class SDL_AudioCVT:
+    pass    # opaque (forward-declared)
+
+class _SDL_AudioStream:
+    pass    # opaque (forward-declared)
+
+class SDL_AudioStream:
+    pass    # opaque handle
+
+@value_type
+class SDL_Color:
+    pub r: Uint8
+    pub g: Uint8
+    pub b: Uint8
+    pub a: Uint8
+
+@value_type
+class SDL_Palette:
+    pub ncolors: c_int
+    pub colors: Pointer[SDL_Color]
+    pub version: Uint32
+    pub refcount: c_int
+
+@value_type
+class SDL_PixelFormat:
+    pub format: Uint32
+    pub palette: Pointer[SDL_Palette]
+    pub BitsPerPixel: Uint8
+    pub BytesPerPixel: Uint8
+    pub padding: [Uint8; 2]
+    pub Rmask: Uint32
+    pub Gmask: Uint32
+    pub Bmask: Uint32
+    pub Amask: Uint32
+    pub Rloss: Uint8
+    pub Gloss: Uint8
+    pub Bloss: Uint8
+    pub Aloss: Uint8
+    pub Rshift: Uint8
+    pub Gshift: Uint8
+    pub Bshift: Uint8
+    pub Ashift: Uint8
+    pub refcount: c_int
+    pub next: Pointer[SDL_PixelFormat]
+
+@value_type
+class SDL_Point:
+    pub x: c_int
+    pub y: c_int
+
+@value_type
+class SDL_FPoint:
+    pub x: c_float
+    pub y: c_float
+
+@value_type
+class SDL_Rect:
+    pub x: c_int
+    pub y: c_int
+    pub w: c_int
+    pub h: c_int
+
+@value_type
+class SDL_FRect:
+    pub x: c_float
+    pub y: c_float
+    pub w: c_float
+    pub h: c_float
+
+class SDL_BlitMap:
+    pass    # opaque handle
+
+@value_type
+class SDL_Surface:
+    pub flags: Uint32
+    pub format: Pointer[SDL_PixelFormat]
+    pub w: c_int
+    pub h: c_int
+    pub pitch: c_int
+    pub pixels: Pointer[void]
+    pub userdata: Pointer[void]
+    pub locked: c_int
+    pub list_blitmap: Pointer[void]
+    pub clip_rect: SDL_Rect
+    pub map: Pointer[SDL_BlitMap]
+    pub refcount: c_int
+
+@value_type
+class SDL_DisplayMode:
+    pub format: Uint32
+    pub w: c_int
+    pub h: c_int
+    pub refresh_rate: c_int
+    pub driverdata: Pointer[void]
+
+class SDL_Window:
+    pass    # opaque handle
+
+@value_type
+class SDL_Keysym:
+    pub scancode: SDL_Scancode
+    pub sym: SDL_Keycode
+    pub mod: Uint16
+    pub unused: Uint32
+
+class SDL_Cursor:
+    pass    # opaque handle
+
+@value_type
+class SDL_GUID:
+    pub data: [Uint8; 16]
+
+class _SDL_Joystick:
+    pass    # opaque (forward-declared)
+
+class SDL_Joystick:
+    pass    # opaque handle
+
+@value_type
+class SDL_VirtualJoystickDesc:
+    pub version: Uint16
+    pub type: Uint16
+    pub naxes: Uint16
+    pub nbuttons: Uint16
+    pub nhats: Uint16
+    pub vendor_id: Uint16
+    pub product_id: Uint16
+    pub padding: Uint16
+    pub button_mask: Uint32
+    pub axis_mask: Uint32
+    pub name: Pointer[char]
+    pub userdata: Pointer[void]
+    pub Update: Pointer[void]
+    pub SetPlayerIndex: Pointer[void]
+    pub Rumble: Pointer[void]
+    pub RumbleTriggers: Pointer[void]
+    pub SetLED: Pointer[void]
+    pub SendEffect: Pointer[void]
+
+class _SDL_Sensor:
+    pass    # opaque (forward-declared)
+
+class SDL_Sensor:
+    pass    # opaque handle
+
+class _SDL_GameController:
+    pass    # opaque (forward-declared)
+
+class SDL_GameController:
+    pass    # opaque handle
+
+@value_type
+class SDL_GameControllerButtonBind:
+    pub bindType: SDL_GameControllerBindType
+    pub value_button: c_int
+    pub value_axis: c_int
+
+@value_type
+class SDL_Finger:
+    pub id: SDL_FingerID
+    pub x: c_float
+    pub y: c_float
+    pub pressure: c_float
+
+@value_type
+class SDL_CommonEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+
+@value_type
+class SDL_DisplayEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub display: Uint32
+    pub event: Uint8
+    pub padding1: Uint8
+    pub padding2: Uint8
+    pub padding3: Uint8
+    pub data1: Sint32
+
+@value_type
+class SDL_WindowEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub windowID: Uint32
+    pub event: Uint8
+    pub padding1: Uint8
+    pub padding2: Uint8
+    pub padding3: Uint8
+    pub data1: Sint32
+    pub data2: Sint32
+
+@value_type
+class SDL_KeyboardEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub windowID: Uint32
+    pub state: Uint8
+    pub repeat: Uint8
+    pub padding2: Uint8
+    pub padding3: Uint8
+    pub keysym: SDL_Keysym
+
+@value_type
+class SDL_TextEditingEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub windowID: Uint32
+    pub text: c_char
+    pub start: Sint32
+    pub length: Sint32
+
+@value_type
+class SDL_TextEditingExtEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub windowID: Uint32
+    pub text: Pointer[char]
+    pub start: Sint32
+    pub length: Sint32
+
+@value_type
+class SDL_TextInputEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub windowID: Uint32
+    pub text: c_char
+
+@value_type
+class SDL_MouseMotionEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub windowID: Uint32
+    pub which: Uint32
+    pub state: Uint32
+    pub x: Sint32
+    pub y: Sint32
+    pub xrel: Sint32
+    pub yrel: Sint32
+
+@value_type
+class SDL_MouseButtonEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub windowID: Uint32
+    pub which: Uint32
+    pub button: Uint8
+    pub state: Uint8
+    pub clicks: Uint8
+    pub padding1: Uint8
+    pub x: Sint32
+    pub y: Sint32
+
+@value_type
+class SDL_MouseWheelEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub windowID: Uint32
+    pub which: Uint32
+    pub x: Sint32
+    pub y: Sint32
+    pub direction: Uint32
+    pub preciseX: c_float
+    pub preciseY: c_float
+    pub mouseX: Sint32
+    pub mouseY: Sint32
+
+@value_type
+class SDL_JoyAxisEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub which: SDL_JoystickID
+    pub axis: Uint8
+    pub padding1: Uint8
+    pub padding2: Uint8
+    pub padding3: Uint8
+    pub value: Sint16
+    pub padding4: Uint16
+
+@value_type
+class SDL_JoyBallEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub which: SDL_JoystickID
+    pub ball: Uint8
+    pub padding1: Uint8
+    pub padding2: Uint8
+    pub padding3: Uint8
+    pub xrel: Sint16
+    pub yrel: Sint16
+
+@value_type
+class SDL_JoyHatEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub which: SDL_JoystickID
+    pub hat: Uint8
+    pub value: Uint8
+    pub padding1: Uint8
+    pub padding2: Uint8
+
+@value_type
+class SDL_JoyButtonEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub which: SDL_JoystickID
+    pub button: Uint8
+    pub state: Uint8
+    pub padding1: Uint8
+    pub padding2: Uint8
+
+@value_type
+class SDL_JoyDeviceEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub which: Sint32
+
+@value_type
+class SDL_JoyBatteryEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub which: SDL_JoystickID
+    pub level: SDL_JoystickPowerLevel
+
+@value_type
+class SDL_ControllerAxisEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub which: SDL_JoystickID
+    pub axis: Uint8
+    pub padding1: Uint8
+    pub padding2: Uint8
+    pub padding3: Uint8
+    pub value: Sint16
+    pub padding4: Uint16
+
+@value_type
+class SDL_ControllerButtonEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub which: SDL_JoystickID
+    pub button: Uint8
+    pub state: Uint8
+    pub padding1: Uint8
+    pub padding2: Uint8
+
+@value_type
+class SDL_ControllerDeviceEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub which: Sint32
+
+@value_type
+class SDL_ControllerTouchpadEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub which: SDL_JoystickID
+    pub touchpad: Sint32
+    pub finger: Sint32
+    pub x: c_float
+    pub y: c_float
+    pub pressure: c_float
+
+@value_type
+class SDL_ControllerSensorEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub which: SDL_JoystickID
+    pub sensor: Sint32
+    pub data: [c_float; 3]
+    pub timestamp_us: Uint64
+
+@value_type
+class SDL_AudioDeviceEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub which: Uint32
+    pub iscapture: Uint8
+    pub padding1: Uint8
+    pub padding2: Uint8
+    pub padding3: Uint8
+
+@value_type
+class SDL_TouchFingerEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub touchId: SDL_TouchID
+    pub fingerId: SDL_FingerID
+    pub x: c_float
+    pub y: c_float
+    pub dx: c_float
+    pub dy: c_float
+    pub pressure: c_float
+    pub windowID: Uint32
+
+@value_type
+class SDL_MultiGestureEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub touchId: SDL_TouchID
+    pub dTheta: c_float
+    pub dDist: c_float
+    pub x: c_float
+    pub y: c_float
+    pub numFingers: Uint16
+    pub padding: Uint16
+
+@value_type
+class SDL_DollarGestureEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub touchId: SDL_TouchID
+    pub gestureId: SDL_GestureID
+    pub numFingers: Uint32
+    pub error: c_float
+    pub x: c_float
+    pub y: c_float
+
+@value_type
+class SDL_DropEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub file: Pointer[char]
+    pub windowID: Uint32
+
+@value_type
+class SDL_SensorEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub which: Sint32
+    pub data: [c_float; 6]
+    pub timestamp_us: Uint64
+
+@value_type
+class SDL_QuitEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+
+@value_type
+class SDL_UserEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub windowID: Uint32
+    pub code: Sint32
+    pub data1: Pointer[void]
+    pub data2: Pointer[void]
+
+class SDL_SysWMmsg:
+    pass    # opaque (forward-declared)
+
+@value_type
+class SDL_SysWMEvent:
+    pub type: Uint32
+    pub timestamp: Uint32
+    pub msg: Pointer[SDL_SysWMmsg]
+
+@union
+@value_type
+class SDL_Event:
+    pub type: Uint32
+    pub common: SDL_CommonEvent
+    pub display: SDL_DisplayEvent
+    pub window: SDL_WindowEvent
+    pub key: SDL_KeyboardEvent
+    pub edit: SDL_TextEditingEvent
+    pub editExt: SDL_TextEditingExtEvent
+    pub text: SDL_TextInputEvent
+    pub motion: SDL_MouseMotionEvent
+    pub button: SDL_MouseButtonEvent
+    pub wheel: SDL_MouseWheelEvent
+    pub jaxis: SDL_JoyAxisEvent
+    pub jball: SDL_JoyBallEvent
+    pub jhat: SDL_JoyHatEvent
+    pub jbutton: SDL_JoyButtonEvent
+    pub jdevice: SDL_JoyDeviceEvent
+    pub jbattery: SDL_JoyBatteryEvent
+    pub caxis: SDL_ControllerAxisEvent
+    pub cbutton: SDL_ControllerButtonEvent
+    pub cdevice: SDL_ControllerDeviceEvent
+    pub ctouchpad: SDL_ControllerTouchpadEvent
+    pub csensor: SDL_ControllerSensorEvent
+    pub adevice: SDL_AudioDeviceEvent
+    pub sensor: SDL_SensorEvent
+    pub quit: SDL_QuitEvent
+    pub user: SDL_UserEvent
+    pub syswm: SDL_SysWMEvent
+    pub tfinger: SDL_TouchFingerEvent
+    pub mgesture: SDL_MultiGestureEvent
+    pub dgesture: SDL_DollarGestureEvent
+    pub drop: SDL_DropEvent
+    pub padding: Uint8
+
+class _SDL_Haptic:
+    pass    # opaque (forward-declared)
+
+class SDL_Haptic:
+    pass    # opaque handle
+
+@value_type
+class SDL_HapticDirection:
+    pub type: Uint8
+    pub dir: [Sint32; 3]
+
+@value_type
+class SDL_HapticConstant:
+    pub type: Uint16
+    pub direction: SDL_HapticDirection
+    pub length: Uint32
+    pub delay: Uint16
+    pub button: Uint16
+    pub interval: Uint16
+    pub level: Sint16
+    pub attack_length: Uint16
+    pub attack_level: Uint16
+    pub fade_length: Uint16
+    pub fade_level: Uint16
+
+@value_type
+class SDL_HapticPeriodic:
+    pub type: Uint16
+    pub direction: SDL_HapticDirection
+    pub length: Uint32
+    pub delay: Uint16
+    pub button: Uint16
+    pub interval: Uint16
+    pub period: Uint16
+    pub magnitude: Sint16
+    pub offset: Sint16
+    pub phase: Uint16
+    pub attack_length: Uint16
+    pub attack_level: Uint16
+    pub fade_length: Uint16
+    pub fade_level: Uint16
+
+@value_type
+class SDL_HapticCondition:
+    pub type: Uint16
+    pub direction: SDL_HapticDirection
+    pub length: Uint32
+    pub delay: Uint16
+    pub button: Uint16
+    pub interval: Uint16
+    pub right_sat: [Uint16; 3]
+    pub left_sat: [Uint16; 3]
+    pub right_coeff: [Sint16; 3]
+    pub left_coeff: [Sint16; 3]
+    pub deadband: [Uint16; 3]
+    pub center: [Sint16; 3]
+
+@value_type
+class SDL_HapticRamp:
+    pub type: Uint16
+    pub direction: SDL_HapticDirection
+    pub length: Uint32
+    pub delay: Uint16
+    pub button: Uint16
+    pub interval: Uint16
+    pub start: Sint16
+    pub end: Sint16
+    pub attack_length: Uint16
+    pub attack_level: Uint16
+    pub fade_length: Uint16
+    pub fade_level: Uint16
+
+@value_type
+class SDL_HapticLeftRight:
+    pub type: Uint16
+    pub length: Uint32
+    pub large_magnitude: Uint16
+    pub small_magnitude: Uint16
+
+@value_type
+class SDL_HapticCustom:
+    pub type: Uint16
+    pub direction: SDL_HapticDirection
+    pub length: Uint32
+    pub delay: Uint16
+    pub button: Uint16
+    pub interval: Uint16
+    pub channels: Uint8
+    pub period: Uint16
+    pub samples: Uint16
+    pub data: Pointer[Uint16]
+    pub attack_length: Uint16
+    pub attack_level: Uint16
+    pub fade_length: Uint16
+    pub fade_level: Uint16
+
+@union
+@value_type
+class SDL_HapticEffect:
+    pub type: Uint16
+    pub constant: SDL_HapticConstant
+    pub periodic: SDL_HapticPeriodic
+    pub condition: SDL_HapticCondition
+    pub ramp: SDL_HapticRamp
+    pub leftright: SDL_HapticLeftRight
+    pub custom: SDL_HapticCustom
+
+class SDL_hid_device_:
+    pass    # opaque (forward-declared)
+
+class SDL_hid_device:
+    pass    # opaque handle
+
+@value_type
+class SDL_hid_device_info:
+    pub path: Pointer[char]
+    pub vendor_id: c_ushort
+    pub product_id: c_ushort
+    pub serial_number: Pointer[wchar_t]
+    pub release_number: c_ushort
+    pub manufacturer_string: Pointer[wchar_t]
+    pub product_string: Pointer[wchar_t]
+    pub usage_page: c_ushort
+    pub usage: c_ushort
+    pub interface_number: c_int
+    pub interface_class: c_int
+    pub interface_subclass: c_int
+    pub interface_protocol: c_int
+    pub next: Pointer[SDL_hid_device_info]
+
+@value_type
+class SDL_MessageBoxButtonData:
+    pub flags: Uint32
+    pub buttonid: c_int
+    pub text: Pointer[char]
+
+@value_type
+class SDL_MessageBoxColor:
+    pub r: Uint8
+    pub g: Uint8
+    pub b: Uint8
+
+@value_type
+class SDL_MessageBoxColorScheme:
+    pub colors: SDL_MessageBoxColor
+
+@value_type
+class SDL_MessageBoxData:
+    pub flags: Uint32
+    pub window: Pointer[SDL_Window]
+    pub title: Pointer[char]
+    pub message: Pointer[char]
+    pub numbuttons: c_int
+    pub buttons: Pointer[SDL_MessageBoxButtonData]
+    pub colorScheme: Pointer[SDL_MessageBoxColorScheme]
+
+@value_type
+class SDL_RendererInfo:
+    pub name: Pointer[char]
+    pub flags: Uint32
+    pub num_texture_formats: Uint32
+    pub texture_formats: [Uint32; 16]
+    pub max_texture_width: c_int
+    pub max_texture_height: c_int
+
+@value_type
+class SDL_Vertex:
+    pub position: SDL_FPoint
+    pub color: SDL_Color
+    pub tex_coord: SDL_FPoint
+
+class SDL_Renderer:
+    pass    # opaque (forward-declared)
+
+class SDL_Texture:
+    pass    # opaque (forward-declared)
+
+@union
+@value_type
+class SDL_WindowShapeParams:
+    pub binarizationCutoff: Uint8
+    pub colorKey: SDL_Color
+
+@value_type
+class SDL_WindowShapeMode:
+    pub mode: WindowShapeMode
+    pub parameters: SDL_WindowShapeParams
+
+class IDirect3DDevice9:
+    pass    # opaque handle
+
+class ID3D11Device:
+    pass    # opaque handle
+
+class ID3D12Device:
+    pass    # opaque handle
+
+@value_type
+class SDL_version:
+    pub major: Uint8
+    pub minor: Uint8
+    pub patch: Uint8
+
+@value_type
+class SDL_Locale:
+    pub language: Pointer[char]
+    pub country: Pointer[char]
+
+const SDL_FALSE: c_int = 0
+const SDL_TRUE: c_int = 1
+const DUMMY_ENUM_VALUE: c_int = 0
+const SDL_ASSERTION_RETRY: c_int = 0
+const SDL_ASSERTION_BREAK: c_int = 1
+const SDL_ASSERTION_ABORT: c_int = 2
+const SDL_ASSERTION_IGNORE: c_int = 3
+const SDL_ASSERTION_ALWAYS_IGNORE: c_int = 4
+const SDL_ENOMEM: c_int = 0
+const SDL_EFREAD: c_int = 1
+const SDL_EFWRITE: c_int = 2
+const SDL_EFSEEK: c_int = 3
+const SDL_UNSUPPORTED: c_int = 4
+const SDL_LASTERROR: c_int = 5
+const SDL_THREAD_PRIORITY_LOW: c_int = 0
+const SDL_THREAD_PRIORITY_NORMAL: c_int = 1
+const SDL_THREAD_PRIORITY_HIGH: c_int = 2
+const SDL_THREAD_PRIORITY_TIME_CRITICAL: c_int = 3
+const SDL_AUDIO_STOPPED: c_int = 0
+const SDL_AUDIO_PLAYING: c_int = 1
+const SDL_AUDIO_PAUSED: c_int = 2
+const SDL_PIXELTYPE_UNKNOWN: c_int = 0
+const SDL_PIXELTYPE_INDEX1: c_int = 1
+const SDL_PIXELTYPE_INDEX4: c_int = 2
+const SDL_PIXELTYPE_INDEX8: c_int = 3
+const SDL_PIXELTYPE_PACKED8: c_int = 4
+const SDL_PIXELTYPE_PACKED16: c_int = 5
+const SDL_PIXELTYPE_PACKED32: c_int = 6
+const SDL_PIXELTYPE_ARRAYU8: c_int = 7
+const SDL_PIXELTYPE_ARRAYU16: c_int = 8
+const SDL_PIXELTYPE_ARRAYU32: c_int = 9
+const SDL_PIXELTYPE_ARRAYF16: c_int = 10
+const SDL_PIXELTYPE_ARRAYF32: c_int = 11
+const SDL_PIXELTYPE_INDEX2: c_int = 12
+const SDL_BITMAPORDER_NONE: c_int = 0
+const SDL_BITMAPORDER_4321: c_int = 1
+const SDL_BITMAPORDER_1234: c_int = 2
+const SDL_PACKEDORDER_NONE: c_int = 0
+const SDL_PACKEDORDER_XRGB: c_int = 1
+const SDL_PACKEDORDER_RGBX: c_int = 2
+const SDL_PACKEDORDER_ARGB: c_int = 3
+const SDL_PACKEDORDER_RGBA: c_int = 4
+const SDL_PACKEDORDER_XBGR: c_int = 5
+const SDL_PACKEDORDER_BGRX: c_int = 6
+const SDL_PACKEDORDER_ABGR: c_int = 7
+const SDL_PACKEDORDER_BGRA: c_int = 8
+const SDL_ARRAYORDER_NONE: c_int = 0
+const SDL_ARRAYORDER_RGB: c_int = 1
+const SDL_ARRAYORDER_RGBA: c_int = 2
+const SDL_ARRAYORDER_ARGB: c_int = 3
+const SDL_ARRAYORDER_BGR: c_int = 4
+const SDL_ARRAYORDER_BGRA: c_int = 5
+const SDL_ARRAYORDER_ABGR: c_int = 6
+const SDL_PACKEDLAYOUT_NONE: c_int = 0
+const SDL_PACKEDLAYOUT_332: c_int = 1
+const SDL_PACKEDLAYOUT_4444: c_int = 2
+const SDL_PACKEDLAYOUT_1555: c_int = 3
+const SDL_PACKEDLAYOUT_5551: c_int = 4
+const SDL_PACKEDLAYOUT_565: c_int = 5
+const SDL_PACKEDLAYOUT_8888: c_int = 6
+const SDL_PACKEDLAYOUT_2101010: c_int = 7
+const SDL_PACKEDLAYOUT_1010102: c_int = 8
+const SDL_PIXELFORMAT_UNKNOWN: c_int = 0
+const SDL_BLENDMODE_NONE: c_int = 0
+const SDL_BLENDMODE_BLEND: c_int = 1
+const SDL_BLENDMODE_ADD: c_int = 2
+const SDL_BLENDMODE_MOD: c_int = 4
+const SDL_BLENDMODE_MUL: c_int = 8
+const SDL_BLENDMODE_INVALID: c_int = 2147483647
+const SDL_BLENDOPERATION_ADD: c_int = 1
+const SDL_BLENDOPERATION_SUBTRACT: c_int = 2
+const SDL_BLENDOPERATION_REV_SUBTRACT: c_int = 3
+const SDL_BLENDOPERATION_MINIMUM: c_int = 4
+const SDL_BLENDOPERATION_MAXIMUM: c_int = 5
+const SDL_BLENDFACTOR_ZERO: c_int = 1
+const SDL_BLENDFACTOR_ONE: c_int = 2
+const SDL_BLENDFACTOR_SRC_COLOR: c_int = 3
+const SDL_BLENDFACTOR_ONE_MINUS_SRC_COLOR: c_int = 4
+const SDL_BLENDFACTOR_SRC_ALPHA: c_int = 5
+const SDL_BLENDFACTOR_ONE_MINUS_SRC_ALPHA: c_int = 6
+const SDL_BLENDFACTOR_DST_COLOR: c_int = 7
+const SDL_BLENDFACTOR_ONE_MINUS_DST_COLOR: c_int = 8
+const SDL_BLENDFACTOR_DST_ALPHA: c_int = 9
+const SDL_BLENDFACTOR_ONE_MINUS_DST_ALPHA: c_int = 10
+const SDL_YUV_CONVERSION_JPEG: c_int = 0
+const SDL_YUV_CONVERSION_BT601: c_int = 1
+const SDL_YUV_CONVERSION_BT709: c_int = 2
+const SDL_YUV_CONVERSION_AUTOMATIC: c_int = 3
+const SDL_WINDOW_FULLSCREEN: c_int = 1
+const SDL_WINDOW_OPENGL: c_int = 2
+const SDL_WINDOW_SHOWN: c_int = 4
+const SDL_WINDOW_HIDDEN: c_int = 8
+const SDL_WINDOW_BORDERLESS: c_int = 16
+const SDL_WINDOW_RESIZABLE: c_int = 32
+const SDL_WINDOW_MINIMIZED: c_int = 64
+const SDL_WINDOW_MAXIMIZED: c_int = 128
+const SDL_WINDOW_MOUSE_GRABBED: c_int = 256
+const SDL_WINDOW_INPUT_FOCUS: c_int = 512
+const SDL_WINDOW_MOUSE_FOCUS: c_int = 1024
+const SDL_WINDOW_FOREIGN: c_int = 2048
+const SDL_WINDOW_ALLOW_HIGHDPI: c_int = 8192
+const SDL_WINDOW_MOUSE_CAPTURE: c_int = 16384
+const SDL_WINDOW_ALWAYS_ON_TOP: c_int = 32768
+const SDL_WINDOW_SKIP_TASKBAR: c_int = 65536
+const SDL_WINDOW_UTILITY: c_int = 131072
+const SDL_WINDOW_TOOLTIP: c_int = 262144
+const SDL_WINDOW_POPUP_MENU: c_int = 524288
+const SDL_WINDOW_KEYBOARD_GRABBED: c_int = 1048576
+const SDL_WINDOW_VULKAN: c_int = 268435456
+const SDL_WINDOW_METAL: c_int = 536870912
+const SDL_WINDOWEVENT_NONE: c_int = 0
+const SDL_WINDOWEVENT_SHOWN: c_int = 1
+const SDL_WINDOWEVENT_HIDDEN: c_int = 2
+const SDL_WINDOWEVENT_EXPOSED: c_int = 3
+const SDL_WINDOWEVENT_MOVED: c_int = 4
+const SDL_WINDOWEVENT_RESIZED: c_int = 5
+const SDL_WINDOWEVENT_SIZE_CHANGED: c_int = 6
+const SDL_WINDOWEVENT_MINIMIZED: c_int = 7
+const SDL_WINDOWEVENT_MAXIMIZED: c_int = 8
+const SDL_WINDOWEVENT_RESTORED: c_int = 9
+const SDL_WINDOWEVENT_ENTER: c_int = 10
+const SDL_WINDOWEVENT_LEAVE: c_int = 11
+const SDL_WINDOWEVENT_FOCUS_GAINED: c_int = 12
+const SDL_WINDOWEVENT_FOCUS_LOST: c_int = 13
+const SDL_WINDOWEVENT_CLOSE: c_int = 14
+const SDL_WINDOWEVENT_TAKE_FOCUS: c_int = 15
+const SDL_WINDOWEVENT_HIT_TEST: c_int = 16
+const SDL_WINDOWEVENT_ICCPROF_CHANGED: c_int = 17
+const SDL_WINDOWEVENT_DISPLAY_CHANGED: c_int = 18
+const SDL_DISPLAYEVENT_NONE: c_int = 0
+const SDL_DISPLAYEVENT_ORIENTATION: c_int = 1
+const SDL_DISPLAYEVENT_CONNECTED: c_int = 2
+const SDL_DISPLAYEVENT_DISCONNECTED: c_int = 3
+const SDL_DISPLAYEVENT_MOVED: c_int = 4
+const SDL_ORIENTATION_UNKNOWN: c_int = 0
+const SDL_ORIENTATION_LANDSCAPE: c_int = 1
+const SDL_ORIENTATION_LANDSCAPE_FLIPPED: c_int = 2
+const SDL_ORIENTATION_PORTRAIT: c_int = 3
+const SDL_ORIENTATION_PORTRAIT_FLIPPED: c_int = 4
+const SDL_FLASH_CANCEL: c_int = 0
+const SDL_FLASH_BRIEFLY: c_int = 1
+const SDL_FLASH_UNTIL_FOCUSED: c_int = 2
+const SDL_GL_RED_SIZE: c_int = 0
+const SDL_GL_GREEN_SIZE: c_int = 1
+const SDL_GL_BLUE_SIZE: c_int = 2
+const SDL_GL_ALPHA_SIZE: c_int = 3
+const SDL_GL_BUFFER_SIZE: c_int = 4
+const SDL_GL_DOUBLEBUFFER: c_int = 5
+const SDL_GL_DEPTH_SIZE: c_int = 6
+const SDL_GL_STENCIL_SIZE: c_int = 7
+const SDL_GL_ACCUM_RED_SIZE: c_int = 8
+const SDL_GL_ACCUM_GREEN_SIZE: c_int = 9
+const SDL_GL_ACCUM_BLUE_SIZE: c_int = 10
+const SDL_GL_ACCUM_ALPHA_SIZE: c_int = 11
+const SDL_GL_STEREO: c_int = 12
+const SDL_GL_MULTISAMPLEBUFFERS: c_int = 13
+const SDL_GL_MULTISAMPLESAMPLES: c_int = 14
+const SDL_GL_ACCELERATED_VISUAL: c_int = 15
+const SDL_GL_RETAINED_BACKING: c_int = 16
+const SDL_GL_CONTEXT_MAJOR_VERSION: c_int = 17
+const SDL_GL_CONTEXT_MINOR_VERSION: c_int = 18
+const SDL_GL_CONTEXT_EGL: c_int = 19
+const SDL_GL_CONTEXT_FLAGS: c_int = 20
+const SDL_GL_CONTEXT_PROFILE_MASK: c_int = 21
+const SDL_GL_SHARE_WITH_CURRENT_CONTEXT: c_int = 22
+const SDL_GL_FRAMEBUFFER_SRGB_CAPABLE: c_int = 23
+const SDL_GL_CONTEXT_RELEASE_BEHAVIOR: c_int = 24
+const SDL_GL_CONTEXT_RESET_NOTIFICATION: c_int = 25
+const SDL_GL_CONTEXT_NO_ERROR: c_int = 26
+const SDL_GL_FLOATBUFFERS: c_int = 27
+const SDL_GL_CONTEXT_PROFILE_CORE: c_int = 1
+const SDL_GL_CONTEXT_PROFILE_COMPATIBILITY: c_int = 2
+const SDL_GL_CONTEXT_PROFILE_ES: c_int = 4
+const SDL_GL_CONTEXT_DEBUG_FLAG: c_int = 1
+const SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG: c_int = 2
+const SDL_GL_CONTEXT_ROBUST_ACCESS_FLAG: c_int = 4
+const SDL_GL_CONTEXT_RESET_ISOLATION_FLAG: c_int = 8
+const SDL_GL_CONTEXT_RELEASE_BEHAVIOR_NONE: c_int = 0
+const SDL_GL_CONTEXT_RELEASE_BEHAVIOR_FLUSH: c_int = 1
+const SDL_GL_CONTEXT_RESET_NO_NOTIFICATION: c_int = 0
+const SDL_GL_CONTEXT_RESET_LOSE_CONTEXT: c_int = 1
+const SDL_HITTEST_NORMAL: c_int = 0
+const SDL_HITTEST_DRAGGABLE: c_int = 1
+const SDL_HITTEST_RESIZE_TOPLEFT: c_int = 2
+const SDL_HITTEST_RESIZE_TOP: c_int = 3
+const SDL_HITTEST_RESIZE_TOPRIGHT: c_int = 4
+const SDL_HITTEST_RESIZE_RIGHT: c_int = 5
+const SDL_HITTEST_RESIZE_BOTTOMRIGHT: c_int = 6
+const SDL_HITTEST_RESIZE_BOTTOM: c_int = 7
+const SDL_HITTEST_RESIZE_BOTTOMLEFT: c_int = 8
+const SDL_HITTEST_RESIZE_LEFT: c_int = 9
+const SDL_SCANCODE_UNKNOWN: c_int = 0
+const SDL_SCANCODE_A: c_int = 4
+const SDL_SCANCODE_B: c_int = 5
+const SDL_SCANCODE_C: c_int = 6
+const SDL_SCANCODE_D: c_int = 7
+const SDL_SCANCODE_E: c_int = 8
+const SDL_SCANCODE_F: c_int = 9
+const SDL_SCANCODE_G: c_int = 10
+const SDL_SCANCODE_H: c_int = 11
+const SDL_SCANCODE_I: c_int = 12
+const SDL_SCANCODE_J: c_int = 13
+const SDL_SCANCODE_K: c_int = 14
+const SDL_SCANCODE_L: c_int = 15
+const SDL_SCANCODE_M: c_int = 16
+const SDL_SCANCODE_N: c_int = 17
+const SDL_SCANCODE_O: c_int = 18
+const SDL_SCANCODE_P: c_int = 19
+const SDL_SCANCODE_Q: c_int = 20
+const SDL_SCANCODE_R: c_int = 21
+const SDL_SCANCODE_S: c_int = 22
+const SDL_SCANCODE_T: c_int = 23
+const SDL_SCANCODE_U: c_int = 24
+const SDL_SCANCODE_V: c_int = 25
+const SDL_SCANCODE_W: c_int = 26
+const SDL_SCANCODE_X: c_int = 27
+const SDL_SCANCODE_Y: c_int = 28
+const SDL_SCANCODE_Z: c_int = 29
+const SDL_SCANCODE_1: c_int = 30
+const SDL_SCANCODE_2: c_int = 31
+const SDL_SCANCODE_3: c_int = 32
+const SDL_SCANCODE_4: c_int = 33
+const SDL_SCANCODE_5: c_int = 34
+const SDL_SCANCODE_6: c_int = 35
+const SDL_SCANCODE_7: c_int = 36
+const SDL_SCANCODE_8: c_int = 37
+const SDL_SCANCODE_9: c_int = 38
+const SDL_SCANCODE_0: c_int = 39
+const SDL_SCANCODE_RETURN: c_int = 40
+const SDL_SCANCODE_ESCAPE: c_int = 41
+const SDL_SCANCODE_BACKSPACE: c_int = 42
+const SDL_SCANCODE_TAB: c_int = 43
+const SDL_SCANCODE_SPACE: c_int = 44
+const SDL_SCANCODE_MINUS: c_int = 45
+const SDL_SCANCODE_EQUALS: c_int = 46
+const SDL_SCANCODE_LEFTBRACKET: c_int = 47
+const SDL_SCANCODE_RIGHTBRACKET: c_int = 48
+const SDL_SCANCODE_BACKSLASH: c_int = 49
+const SDL_SCANCODE_NONUSHASH: c_int = 50
+const SDL_SCANCODE_SEMICOLON: c_int = 51
+const SDL_SCANCODE_APOSTROPHE: c_int = 52
+const SDL_SCANCODE_GRAVE: c_int = 53
+const SDL_SCANCODE_COMMA: c_int = 54
+const SDL_SCANCODE_PERIOD: c_int = 55
+const SDL_SCANCODE_SLASH: c_int = 56
+const SDL_SCANCODE_CAPSLOCK: c_int = 57
+const SDL_SCANCODE_F1: c_int = 58
+const SDL_SCANCODE_F2: c_int = 59
+const SDL_SCANCODE_F3: c_int = 60
+const SDL_SCANCODE_F4: c_int = 61
+const SDL_SCANCODE_F5: c_int = 62
+const SDL_SCANCODE_F6: c_int = 63
+const SDL_SCANCODE_F7: c_int = 64
+const SDL_SCANCODE_F8: c_int = 65
+const SDL_SCANCODE_F9: c_int = 66
+const SDL_SCANCODE_F10: c_int = 67
+const SDL_SCANCODE_F11: c_int = 68
+const SDL_SCANCODE_F12: c_int = 69
+const SDL_SCANCODE_PRINTSCREEN: c_int = 70
+const SDL_SCANCODE_SCROLLLOCK: c_int = 71
+const SDL_SCANCODE_PAUSE: c_int = 72
+const SDL_SCANCODE_INSERT: c_int = 73
+const SDL_SCANCODE_HOME: c_int = 74
+const SDL_SCANCODE_PAGEUP: c_int = 75
+const SDL_SCANCODE_DELETE: c_int = 76
+const SDL_SCANCODE_END: c_int = 77
+const SDL_SCANCODE_PAGEDOWN: c_int = 78
+const SDL_SCANCODE_RIGHT: c_int = 79
+const SDL_SCANCODE_LEFT: c_int = 80
+const SDL_SCANCODE_DOWN: c_int = 81
+const SDL_SCANCODE_UP: c_int = 82
+const SDL_SCANCODE_NUMLOCKCLEAR: c_int = 83
+const SDL_SCANCODE_KP_DIVIDE: c_int = 84
+const SDL_SCANCODE_KP_MULTIPLY: c_int = 85
+const SDL_SCANCODE_KP_MINUS: c_int = 86
+const SDL_SCANCODE_KP_PLUS: c_int = 87
+const SDL_SCANCODE_KP_ENTER: c_int = 88
+const SDL_SCANCODE_KP_1: c_int = 89
+const SDL_SCANCODE_KP_2: c_int = 90
+const SDL_SCANCODE_KP_3: c_int = 91
+const SDL_SCANCODE_KP_4: c_int = 92
+const SDL_SCANCODE_KP_5: c_int = 93
+const SDL_SCANCODE_KP_6: c_int = 94
+const SDL_SCANCODE_KP_7: c_int = 95
+const SDL_SCANCODE_KP_8: c_int = 96
+const SDL_SCANCODE_KP_9: c_int = 97
+const SDL_SCANCODE_KP_0: c_int = 98
+const SDL_SCANCODE_KP_PERIOD: c_int = 99
+const SDL_SCANCODE_NONUSBACKSLASH: c_int = 100
+const SDL_SCANCODE_APPLICATION: c_int = 101
+const SDL_SCANCODE_POWER: c_int = 102
+const SDL_SCANCODE_KP_EQUALS: c_int = 103
+const SDL_SCANCODE_F13: c_int = 104
+const SDL_SCANCODE_F14: c_int = 105
+const SDL_SCANCODE_F15: c_int = 106
+const SDL_SCANCODE_F16: c_int = 107
+const SDL_SCANCODE_F17: c_int = 108
+const SDL_SCANCODE_F18: c_int = 109
+const SDL_SCANCODE_F19: c_int = 110
+const SDL_SCANCODE_F20: c_int = 111
+const SDL_SCANCODE_F21: c_int = 112
+const SDL_SCANCODE_F22: c_int = 113
+const SDL_SCANCODE_F23: c_int = 114
+const SDL_SCANCODE_F24: c_int = 115
+const SDL_SCANCODE_EXECUTE: c_int = 116
+const SDL_SCANCODE_HELP: c_int = 117
+const SDL_SCANCODE_MENU: c_int = 118
+const SDL_SCANCODE_SELECT: c_int = 119
+const SDL_SCANCODE_STOP: c_int = 120
+const SDL_SCANCODE_AGAIN: c_int = 121
+const SDL_SCANCODE_UNDO: c_int = 122
+const SDL_SCANCODE_CUT: c_int = 123
+const SDL_SCANCODE_COPY: c_int = 124
+const SDL_SCANCODE_PASTE: c_int = 125
+const SDL_SCANCODE_FIND: c_int = 126
+const SDL_SCANCODE_MUTE: c_int = 127
+const SDL_SCANCODE_VOLUMEUP: c_int = 128
+const SDL_SCANCODE_VOLUMEDOWN: c_int = 129
+const SDL_SCANCODE_KP_COMMA: c_int = 133
+const SDL_SCANCODE_KP_EQUALSAS400: c_int = 134
+const SDL_SCANCODE_INTERNATIONAL1: c_int = 135
+const SDL_SCANCODE_INTERNATIONAL2: c_int = 136
+const SDL_SCANCODE_INTERNATIONAL3: c_int = 137
+const SDL_SCANCODE_INTERNATIONAL4: c_int = 138
+const SDL_SCANCODE_INTERNATIONAL5: c_int = 139
+const SDL_SCANCODE_INTERNATIONAL6: c_int = 140
+const SDL_SCANCODE_INTERNATIONAL7: c_int = 141
+const SDL_SCANCODE_INTERNATIONAL8: c_int = 142
+const SDL_SCANCODE_INTERNATIONAL9: c_int = 143
+const SDL_SCANCODE_LANG1: c_int = 144
+const SDL_SCANCODE_LANG2: c_int = 145
+const SDL_SCANCODE_LANG3: c_int = 146
+const SDL_SCANCODE_LANG4: c_int = 147
+const SDL_SCANCODE_LANG5: c_int = 148
+const SDL_SCANCODE_LANG6: c_int = 149
+const SDL_SCANCODE_LANG7: c_int = 150
+const SDL_SCANCODE_LANG8: c_int = 151
+const SDL_SCANCODE_LANG9: c_int = 152
+const SDL_SCANCODE_ALTERASE: c_int = 153
+const SDL_SCANCODE_SYSREQ: c_int = 154
+const SDL_SCANCODE_CANCEL: c_int = 155
+const SDL_SCANCODE_CLEAR: c_int = 156
+const SDL_SCANCODE_PRIOR: c_int = 157
+const SDL_SCANCODE_RETURN2: c_int = 158
+const SDL_SCANCODE_SEPARATOR: c_int = 159
+const SDL_SCANCODE_OUT: c_int = 160
+const SDL_SCANCODE_OPER: c_int = 161
+const SDL_SCANCODE_CLEARAGAIN: c_int = 162
+const SDL_SCANCODE_CRSEL: c_int = 163
+const SDL_SCANCODE_EXSEL: c_int = 164
+const SDL_SCANCODE_KP_00: c_int = 176
+const SDL_SCANCODE_KP_000: c_int = 177
+const SDL_SCANCODE_THOUSANDSSEPARATOR: c_int = 178
+const SDL_SCANCODE_DECIMALSEPARATOR: c_int = 179
+const SDL_SCANCODE_CURRENCYUNIT: c_int = 180
+const SDL_SCANCODE_CURRENCYSUBUNIT: c_int = 181
+const SDL_SCANCODE_KP_LEFTPAREN: c_int = 182
+const SDL_SCANCODE_KP_RIGHTPAREN: c_int = 183
+const SDL_SCANCODE_KP_LEFTBRACE: c_int = 184
+const SDL_SCANCODE_KP_RIGHTBRACE: c_int = 185
+const SDL_SCANCODE_KP_TAB: c_int = 186
+const SDL_SCANCODE_KP_BACKSPACE: c_int = 187
+const SDL_SCANCODE_KP_A: c_int = 188
+const SDL_SCANCODE_KP_B: c_int = 189
+const SDL_SCANCODE_KP_C: c_int = 190
+const SDL_SCANCODE_KP_D: c_int = 191
+const SDL_SCANCODE_KP_E: c_int = 192
+const SDL_SCANCODE_KP_F: c_int = 193
+const SDL_SCANCODE_KP_XOR: c_int = 194
+const SDL_SCANCODE_KP_POWER: c_int = 195
+const SDL_SCANCODE_KP_PERCENT: c_int = 196
+const SDL_SCANCODE_KP_LESS: c_int = 197
+const SDL_SCANCODE_KP_GREATER: c_int = 198
+const SDL_SCANCODE_KP_AMPERSAND: c_int = 199
+const SDL_SCANCODE_KP_DBLAMPERSAND: c_int = 200
+const SDL_SCANCODE_KP_VERTICALBAR: c_int = 201
+const SDL_SCANCODE_KP_DBLVERTICALBAR: c_int = 202
+const SDL_SCANCODE_KP_COLON: c_int = 203
+const SDL_SCANCODE_KP_HASH: c_int = 204
+const SDL_SCANCODE_KP_SPACE: c_int = 205
+const SDL_SCANCODE_KP_AT: c_int = 206
+const SDL_SCANCODE_KP_EXCLAM: c_int = 207
+const SDL_SCANCODE_KP_MEMSTORE: c_int = 208
+const SDL_SCANCODE_KP_MEMRECALL: c_int = 209
+const SDL_SCANCODE_KP_MEMCLEAR: c_int = 210
+const SDL_SCANCODE_KP_MEMADD: c_int = 211
+const SDL_SCANCODE_KP_MEMSUBTRACT: c_int = 212
+const SDL_SCANCODE_KP_MEMMULTIPLY: c_int = 213
+const SDL_SCANCODE_KP_MEMDIVIDE: c_int = 214
+const SDL_SCANCODE_KP_PLUSMINUS: c_int = 215
+const SDL_SCANCODE_KP_CLEAR: c_int = 216
+const SDL_SCANCODE_KP_CLEARENTRY: c_int = 217
+const SDL_SCANCODE_KP_BINARY: c_int = 218
+const SDL_SCANCODE_KP_OCTAL: c_int = 219
+const SDL_SCANCODE_KP_DECIMAL: c_int = 220
+const SDL_SCANCODE_KP_HEXADECIMAL: c_int = 221
+const SDL_SCANCODE_LCTRL: c_int = 224
+const SDL_SCANCODE_LSHIFT: c_int = 225
+const SDL_SCANCODE_LALT: c_int = 226
+const SDL_SCANCODE_LGUI: c_int = 227
+const SDL_SCANCODE_RCTRL: c_int = 228
+const SDL_SCANCODE_RSHIFT: c_int = 229
+const SDL_SCANCODE_RALT: c_int = 230
+const SDL_SCANCODE_RGUI: c_int = 231
+const SDL_SCANCODE_MODE: c_int = 257
+const SDL_SCANCODE_AUDIONEXT: c_int = 258
+const SDL_SCANCODE_AUDIOPREV: c_int = 259
+const SDL_SCANCODE_AUDIOSTOP: c_int = 260
+const SDL_SCANCODE_AUDIOPLAY: c_int = 261
+const SDL_SCANCODE_AUDIOMUTE: c_int = 262
+const SDL_SCANCODE_MEDIASELECT: c_int = 263
+const SDL_SCANCODE_WWW: c_int = 264
+const SDL_SCANCODE_MAIL: c_int = 265
+const SDL_SCANCODE_CALCULATOR: c_int = 266
+const SDL_SCANCODE_COMPUTER: c_int = 267
+const SDL_SCANCODE_AC_SEARCH: c_int = 268
+const SDL_SCANCODE_AC_HOME: c_int = 269
+const SDL_SCANCODE_AC_BACK: c_int = 270
+const SDL_SCANCODE_AC_FORWARD: c_int = 271
+const SDL_SCANCODE_AC_STOP: c_int = 272
+const SDL_SCANCODE_AC_REFRESH: c_int = 273
+const SDL_SCANCODE_AC_BOOKMARKS: c_int = 274
+const SDL_SCANCODE_BRIGHTNESSDOWN: c_int = 275
+const SDL_SCANCODE_BRIGHTNESSUP: c_int = 276
+const SDL_SCANCODE_DISPLAYSWITCH: c_int = 277
+const SDL_SCANCODE_KBDILLUMTOGGLE: c_int = 278
+const SDL_SCANCODE_KBDILLUMDOWN: c_int = 279
+const SDL_SCANCODE_KBDILLUMUP: c_int = 280
+const SDL_SCANCODE_EJECT: c_int = 281
+const SDL_SCANCODE_SLEEP: c_int = 282
+const SDL_SCANCODE_APP1: c_int = 283
+const SDL_SCANCODE_APP2: c_int = 284
+const SDL_SCANCODE_AUDIOREWIND: c_int = 285
+const SDL_SCANCODE_AUDIOFASTFORWARD: c_int = 286
+const SDL_SCANCODE_SOFTLEFT: c_int = 287
+const SDL_SCANCODE_SOFTRIGHT: c_int = 288
+const SDL_SCANCODE_CALL: c_int = 289
+const SDL_SCANCODE_ENDCALL: c_int = 290
+const SDL_NUM_SCANCODES: c_int = 512
+const SDLK_UNKNOWN: c_int = 0
+const KMOD_NONE: c_int = 0
+const KMOD_LSHIFT: c_int = 1
+const KMOD_RSHIFT: c_int = 2
+const KMOD_LCTRL: c_int = 64
+const KMOD_RCTRL: c_int = 128
+const KMOD_LALT: c_int = 256
+const KMOD_RALT: c_int = 512
+const KMOD_LGUI: c_int = 1024
+const KMOD_RGUI: c_int = 2048
+const KMOD_NUM: c_int = 4096
+const KMOD_CAPS: c_int = 8192
+const KMOD_MODE: c_int = 16384
+const KMOD_SCROLL: c_int = 32768
+const SDL_SYSTEM_CURSOR_ARROW: c_int = 0
+const SDL_SYSTEM_CURSOR_IBEAM: c_int = 1
+const SDL_SYSTEM_CURSOR_WAIT: c_int = 2
+const SDL_SYSTEM_CURSOR_CROSSHAIR: c_int = 3
+const SDL_SYSTEM_CURSOR_WAITARROW: c_int = 4
+const SDL_SYSTEM_CURSOR_SIZENWSE: c_int = 5
+const SDL_SYSTEM_CURSOR_SIZENESW: c_int = 6
+const SDL_SYSTEM_CURSOR_SIZEWE: c_int = 7
+const SDL_SYSTEM_CURSOR_SIZENS: c_int = 8
+const SDL_SYSTEM_CURSOR_SIZEALL: c_int = 9
+const SDL_SYSTEM_CURSOR_NO: c_int = 10
+const SDL_SYSTEM_CURSOR_HAND: c_int = 11
+const SDL_NUM_SYSTEM_CURSORS: c_int = 12
+const SDL_MOUSEWHEEL_NORMAL: c_int = 0
+const SDL_MOUSEWHEEL_FLIPPED: c_int = 1
+const SDL_JOYSTICK_TYPE_UNKNOWN: c_int = 0
+const SDL_JOYSTICK_TYPE_GAMECONTROLLER: c_int = 1
+const SDL_JOYSTICK_TYPE_WHEEL: c_int = 2
+const SDL_JOYSTICK_TYPE_ARCADE_STICK: c_int = 3
+const SDL_JOYSTICK_TYPE_FLIGHT_STICK: c_int = 4
+const SDL_JOYSTICK_TYPE_DANCE_PAD: c_int = 5
+const SDL_JOYSTICK_TYPE_GUITAR: c_int = 6
+const SDL_JOYSTICK_TYPE_DRUM_KIT: c_int = 7
+const SDL_JOYSTICK_TYPE_ARCADE_PAD: c_int = 8
+const SDL_JOYSTICK_TYPE_THROTTLE: c_int = 9
+const SDL_JOYSTICK_POWER_EMPTY: c_int = 0
+const SDL_JOYSTICK_POWER_LOW: c_int = 1
+const SDL_JOYSTICK_POWER_MEDIUM: c_int = 2
+const SDL_JOYSTICK_POWER_FULL: c_int = 3
+const SDL_JOYSTICK_POWER_WIRED: c_int = 4
+const SDL_JOYSTICK_POWER_MAX: c_int = 5
+const SDL_SENSOR_UNKNOWN: c_int = 0
+const SDL_SENSOR_ACCEL: c_int = 1
+const SDL_SENSOR_GYRO: c_int = 2
+const SDL_SENSOR_ACCEL_L: c_int = 3
+const SDL_SENSOR_GYRO_L: c_int = 4
+const SDL_SENSOR_ACCEL_R: c_int = 5
+const SDL_SENSOR_GYRO_R: c_int = 6
+const SDL_CONTROLLER_TYPE_UNKNOWN: c_int = 0
+const SDL_CONTROLLER_TYPE_XBOX360: c_int = 1
+const SDL_CONTROLLER_TYPE_XBOXONE: c_int = 2
+const SDL_CONTROLLER_TYPE_PS3: c_int = 3
+const SDL_CONTROLLER_TYPE_PS4: c_int = 4
+const SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO: c_int = 5
+const SDL_CONTROLLER_TYPE_VIRTUAL: c_int = 6
+const SDL_CONTROLLER_TYPE_PS5: c_int = 7
+const SDL_CONTROLLER_TYPE_AMAZON_LUNA: c_int = 8
+const SDL_CONTROLLER_TYPE_GOOGLE_STADIA: c_int = 9
+const SDL_CONTROLLER_TYPE_NVIDIA_SHIELD: c_int = 10
+const SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_LEFT: c_int = 11
+const SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT: c_int = 12
+const SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR: c_int = 13
+const SDL_CONTROLLER_TYPE_MAX: c_int = 14
+const SDL_CONTROLLER_BINDTYPE_NONE: c_int = 0
+const SDL_CONTROLLER_BINDTYPE_BUTTON: c_int = 1
+const SDL_CONTROLLER_BINDTYPE_AXIS: c_int = 2
+const SDL_CONTROLLER_BINDTYPE_HAT: c_int = 3
+const SDL_CONTROLLER_AXIS_LEFTX: c_int = 0
+const SDL_CONTROLLER_AXIS_LEFTY: c_int = 1
+const SDL_CONTROLLER_AXIS_RIGHTX: c_int = 2
+const SDL_CONTROLLER_AXIS_RIGHTY: c_int = 3
+const SDL_CONTROLLER_AXIS_TRIGGERLEFT: c_int = 4
+const SDL_CONTROLLER_AXIS_TRIGGERRIGHT: c_int = 5
+const SDL_CONTROLLER_AXIS_MAX: c_int = 6
+const SDL_CONTROLLER_BUTTON_A: c_int = 0
+const SDL_CONTROLLER_BUTTON_B: c_int = 1
+const SDL_CONTROLLER_BUTTON_X: c_int = 2
+const SDL_CONTROLLER_BUTTON_Y: c_int = 3
+const SDL_CONTROLLER_BUTTON_BACK: c_int = 4
+const SDL_CONTROLLER_BUTTON_GUIDE: c_int = 5
+const SDL_CONTROLLER_BUTTON_START: c_int = 6
+const SDL_CONTROLLER_BUTTON_LEFTSTICK: c_int = 7
+const SDL_CONTROLLER_BUTTON_RIGHTSTICK: c_int = 8
+const SDL_CONTROLLER_BUTTON_LEFTSHOULDER: c_int = 9
+const SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: c_int = 10
+const SDL_CONTROLLER_BUTTON_DPAD_UP: c_int = 11
+const SDL_CONTROLLER_BUTTON_DPAD_DOWN: c_int = 12
+const SDL_CONTROLLER_BUTTON_DPAD_LEFT: c_int = 13
+const SDL_CONTROLLER_BUTTON_DPAD_RIGHT: c_int = 14
+const SDL_CONTROLLER_BUTTON_MISC1: c_int = 15
+const SDL_CONTROLLER_BUTTON_PADDLE1: c_int = 16
+const SDL_CONTROLLER_BUTTON_PADDLE2: c_int = 17
+const SDL_CONTROLLER_BUTTON_PADDLE3: c_int = 18
+const SDL_CONTROLLER_BUTTON_PADDLE4: c_int = 19
+const SDL_CONTROLLER_BUTTON_TOUCHPAD: c_int = 20
+const SDL_CONTROLLER_BUTTON_MAX: c_int = 21
+const SDL_TOUCH_DEVICE_DIRECT: c_int = 0
+const SDL_TOUCH_DEVICE_INDIRECT_ABSOLUTE: c_int = 1
+const SDL_TOUCH_DEVICE_INDIRECT_RELATIVE: c_int = 2
+const SDL_FIRSTEVENT: c_int = 0
+const SDL_QUIT: c_int = 256
+const SDL_APP_TERMINATING: c_int = 257
+const SDL_APP_LOWMEMORY: c_int = 258
+const SDL_APP_WILLENTERBACKGROUND: c_int = 259
+const SDL_APP_DIDENTERBACKGROUND: c_int = 260
+const SDL_APP_WILLENTERFOREGROUND: c_int = 261
+const SDL_APP_DIDENTERFOREGROUND: c_int = 262
+const SDL_LOCALECHANGED: c_int = 263
+const SDL_DISPLAYEVENT: c_int = 336
+const SDL_WINDOWEVENT: c_int = 512
+const SDL_SYSWMEVENT: c_int = 513
+const SDL_KEYDOWN: c_int = 768
+const SDL_KEYUP: c_int = 769
+const SDL_TEXTEDITING: c_int = 770
+const SDL_TEXTINPUT: c_int = 771
+const SDL_KEYMAPCHANGED: c_int = 772
+const SDL_TEXTEDITING_EXT: c_int = 773
+const SDL_MOUSEMOTION: c_int = 1024
+const SDL_MOUSEBUTTONDOWN: c_int = 1025
+const SDL_MOUSEBUTTONUP: c_int = 1026
+const SDL_MOUSEWHEEL: c_int = 1027
+const SDL_JOYAXISMOTION: c_int = 1536
+const SDL_JOYBALLMOTION: c_int = 1537
+const SDL_JOYHATMOTION: c_int = 1538
+const SDL_JOYBUTTONDOWN: c_int = 1539
+const SDL_JOYBUTTONUP: c_int = 1540
+const SDL_JOYDEVICEADDED: c_int = 1541
+const SDL_JOYDEVICEREMOVED: c_int = 1542
+const SDL_JOYBATTERYUPDATED: c_int = 1543
+const SDL_CONTROLLERAXISMOTION: c_int = 1616
+const SDL_CONTROLLERBUTTONDOWN: c_int = 1617
+const SDL_CONTROLLERBUTTONUP: c_int = 1618
+const SDL_CONTROLLERDEVICEADDED: c_int = 1619
+const SDL_CONTROLLERDEVICEREMOVED: c_int = 1620
+const SDL_CONTROLLERDEVICEREMAPPED: c_int = 1621
+const SDL_CONTROLLERTOUCHPADDOWN: c_int = 1622
+const SDL_CONTROLLERTOUCHPADMOTION: c_int = 1623
+const SDL_CONTROLLERTOUCHPADUP: c_int = 1624
+const SDL_CONTROLLERSENSORUPDATE: c_int = 1625
+const SDL_CONTROLLERUPDATECOMPLETE_RESERVED_FOR_SDL3: c_int = 1626
+const SDL_CONTROLLERSTEAMHANDLEUPDATED: c_int = 1627
+const SDL_FINGERDOWN: c_int = 1792
+const SDL_FINGERUP: c_int = 1793
+const SDL_FINGERMOTION: c_int = 1794
+const SDL_DOLLARGESTURE: c_int = 2048
+const SDL_DOLLARRECORD: c_int = 2049
+const SDL_MULTIGESTURE: c_int = 2050
+const SDL_CLIPBOARDUPDATE: c_int = 2304
+const SDL_DROPFILE: c_int = 4096
+const SDL_DROPTEXT: c_int = 4097
+const SDL_DROPBEGIN: c_int = 4098
+const SDL_DROPCOMPLETE: c_int = 4099
+const SDL_AUDIODEVICEADDED: c_int = 4352
+const SDL_AUDIODEVICEREMOVED: c_int = 4353
+const SDL_SENSORUPDATE: c_int = 4608
+const SDL_RENDER_TARGETS_RESET: c_int = 8192
+const SDL_RENDER_DEVICE_RESET: c_int = 8193
+const SDL_POLLSENTINEL: c_int = 32512
+const SDL_USEREVENT: c_int = 32768
+const SDL_LASTEVENT: c_int = 65535
+const SDL_ADDEVENT: c_int = 0
+const SDL_PEEKEVENT: c_int = 1
+const SDL_GETEVENT: c_int = 2
+const SDL_HINT_DEFAULT: c_int = 0
+const SDL_HINT_NORMAL: c_int = 1
+const SDL_HINT_OVERRIDE: c_int = 2
+const SDL_LOG_CATEGORY_APPLICATION: c_int = 0
+const SDL_LOG_CATEGORY_ERROR: c_int = 1
+const SDL_LOG_CATEGORY_ASSERT: c_int = 2
+const SDL_LOG_CATEGORY_SYSTEM: c_int = 3
+const SDL_LOG_CATEGORY_AUDIO: c_int = 4
+const SDL_LOG_CATEGORY_VIDEO: c_int = 5
+const SDL_LOG_CATEGORY_RENDER: c_int = 6
+const SDL_LOG_CATEGORY_INPUT: c_int = 7
+const SDL_LOG_CATEGORY_TEST: c_int = 8
+const SDL_LOG_CATEGORY_RESERVED1: c_int = 9
+const SDL_LOG_CATEGORY_RESERVED2: c_int = 10
+const SDL_LOG_CATEGORY_RESERVED3: c_int = 11
+const SDL_LOG_CATEGORY_RESERVED4: c_int = 12
+const SDL_LOG_CATEGORY_RESERVED5: c_int = 13
+const SDL_LOG_CATEGORY_RESERVED6: c_int = 14
+const SDL_LOG_CATEGORY_RESERVED7: c_int = 15
+const SDL_LOG_CATEGORY_RESERVED8: c_int = 16
+const SDL_LOG_CATEGORY_RESERVED9: c_int = 17
+const SDL_LOG_CATEGORY_RESERVED10: c_int = 18
+const SDL_LOG_CATEGORY_CUSTOM: c_int = 19
+const SDL_LOG_PRIORITY_VERBOSE: c_int = 1
+const SDL_LOG_PRIORITY_DEBUG: c_int = 2
+const SDL_LOG_PRIORITY_INFO: c_int = 3
+const SDL_LOG_PRIORITY_WARN: c_int = 4
+const SDL_LOG_PRIORITY_ERROR: c_int = 5
+const SDL_LOG_PRIORITY_CRITICAL: c_int = 6
+const SDL_NUM_LOG_PRIORITIES: c_int = 7
+const SDL_MESSAGEBOX_ERROR: c_int = 16
+const SDL_MESSAGEBOX_WARNING: c_int = 32
+const SDL_MESSAGEBOX_INFORMATION: c_int = 64
+const SDL_MESSAGEBOX_BUTTONS_LEFT_TO_RIGHT: c_int = 128
+const SDL_MESSAGEBOX_BUTTONS_RIGHT_TO_LEFT: c_int = 256
+const SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT: c_int = 1
+const SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT: c_int = 2
+const SDL_MESSAGEBOX_COLOR_BACKGROUND: c_int = 0
+const SDL_MESSAGEBOX_COLOR_TEXT: c_int = 1
+const SDL_MESSAGEBOX_COLOR_BUTTON_BORDER: c_int = 2
+const SDL_MESSAGEBOX_COLOR_BUTTON_BACKGROUND: c_int = 3
+const SDL_MESSAGEBOX_COLOR_BUTTON_SELECTED: c_int = 4
+const SDL_MESSAGEBOX_COLOR_MAX: c_int = 5
+const SDL_POWERSTATE_UNKNOWN: c_int = 0
+const SDL_POWERSTATE_ON_BATTERY: c_int = 1
+const SDL_POWERSTATE_NO_BATTERY: c_int = 2
+const SDL_POWERSTATE_CHARGING: c_int = 3
+const SDL_POWERSTATE_CHARGED: c_int = 4
+const SDL_RENDERER_SOFTWARE: c_int = 1
+const SDL_RENDERER_ACCELERATED: c_int = 2
+const SDL_RENDERER_PRESENTVSYNC: c_int = 4
+const SDL_RENDERER_TARGETTEXTURE: c_int = 8
+const SDL_ScaleModeNearest: c_int = 0
+const SDL_ScaleModeLinear: c_int = 1
+const SDL_ScaleModeBest: c_int = 2
+const SDL_TEXTUREACCESS_STATIC: c_int = 0
+const SDL_TEXTUREACCESS_STREAMING: c_int = 1
+const SDL_TEXTUREACCESS_TARGET: c_int = 2
+const SDL_TEXTUREMODULATE_NONE: c_int = 0
+const SDL_TEXTUREMODULATE_COLOR: c_int = 1
+const SDL_TEXTUREMODULATE_ALPHA: c_int = 2
+const SDL_FLIP_NONE: c_int = 0
+const SDL_FLIP_HORIZONTAL: c_int = 1
+const SDL_FLIP_VERTICAL: c_int = 2
+const ShapeModeDefault: c_int = 0
+const ShapeModeBinarizeAlpha: c_int = 1
+const ShapeModeReverseBinarizeAlpha: c_int = 2
+const ShapeModeColorKey: c_int = 3
+
+extern "C":
+    def SDL_GetPlatform() -> Pointer[char]
+    def SDL_malloc(size: c_size_t) -> Pointer[void]
+    def SDL_calloc(nmemb: c_size_t, size: c_size_t) -> Pointer[void]
+    def SDL_realloc(mem: Pointer[void], size: c_size_t) -> Pointer[void]
+    def SDL_free(mem: Pointer[void])
+    def SDL_GetOriginalMemoryFunctions(malloc_func: Pointer[SDL_malloc_func], calloc_func: Pointer[SDL_calloc_func], realloc_func: Pointer[SDL_realloc_func], free_func: Pointer[SDL_free_func])
+    def SDL_GetMemoryFunctions(malloc_func: Pointer[SDL_malloc_func], calloc_func: Pointer[SDL_calloc_func], realloc_func: Pointer[SDL_realloc_func], free_func: Pointer[SDL_free_func])
+    def SDL_SetMemoryFunctions(malloc_func: SDL_malloc_func, calloc_func: SDL_calloc_func, realloc_func: SDL_realloc_func, free_func: SDL_free_func) -> c_int
+    def SDL_GetNumAllocations() -> c_int
+    def SDL_getenv(name: Pointer[char]) -> Pointer[char]
+    def SDL_setenv(name: Pointer[char], value: Pointer[char], overwrite: c_int) -> c_int
+    def SDL_qsort(base: Pointer[void], nmemb: c_size_t, size: c_size_t, compare: SDL_CompareCallback)
+    def SDL_bsearch(key: Pointer[void], base: Pointer[void], nmemb: c_size_t, size: c_size_t, compare: SDL_CompareCallback) -> Pointer[void]
+    def SDL_abs(x: c_int) -> c_int
+    def SDL_isalpha(x: c_int) -> c_int
+    def SDL_isalnum(x: c_int) -> c_int
+    def SDL_isblank(x: c_int) -> c_int
+    def SDL_iscntrl(x: c_int) -> c_int
+    def SDL_isdigit(x: c_int) -> c_int
+    def SDL_isxdigit(x: c_int) -> c_int
+    def SDL_ispunct(x: c_int) -> c_int
+    def SDL_isspace(x: c_int) -> c_int
+    def SDL_isupper(x: c_int) -> c_int
+    def SDL_islower(x: c_int) -> c_int
+    def SDL_isprint(x: c_int) -> c_int
+    def SDL_isgraph(x: c_int) -> c_int
+    def SDL_toupper(x: c_int) -> c_int
+    def SDL_tolower(x: c_int) -> c_int
+    def SDL_crc16(crc: Uint16, data: Pointer[void], len: c_size_t) -> Uint16
+    def SDL_crc32(crc: Uint32, data: Pointer[void], len: c_size_t) -> Uint32
+    def SDL_memset(dst: Pointer[void], c: c_int, len: c_size_t) -> Pointer[void]
+    def SDL_memcpy(dst: Pointer[void], src: Pointer[void], len: c_size_t) -> Pointer[void]
+    def SDL_memmove(dst: Pointer[void], src: Pointer[void], len: c_size_t) -> Pointer[void]
+    def SDL_memcmp(s1: Pointer[void], s2: Pointer[void], len: c_size_t) -> c_int
+    def SDL_wcslen(wstr: Pointer[wchar_t]) -> c_size_t
+    def SDL_wcslcpy(dst: Pointer[wchar_t], src: Pointer[wchar_t], maxlen: c_size_t) -> c_size_t
+    def SDL_wcslcat(dst: Pointer[wchar_t], src: Pointer[wchar_t], maxlen: c_size_t) -> c_size_t
+    def SDL_wcsdup(wstr: Pointer[wchar_t]) -> Pointer[wchar_t]
+    def SDL_wcsstr(haystack: Pointer[wchar_t], needle: Pointer[wchar_t]) -> Pointer[wchar_t]
+    def SDL_wcscmp(str1: Pointer[wchar_t], str2: Pointer[wchar_t]) -> c_int
+    def SDL_wcsncmp(str1: Pointer[wchar_t], str2: Pointer[wchar_t], maxlen: c_size_t) -> c_int
+    def SDL_wcscasecmp(str1: Pointer[wchar_t], str2: Pointer[wchar_t]) -> c_int
+    def SDL_wcsncasecmp(str1: Pointer[wchar_t], str2: Pointer[wchar_t], len: c_size_t) -> c_int
+    def SDL_strlen(str: Pointer[char]) -> c_size_t
+    def SDL_strlcpy(dst: Pointer[char], src: Pointer[char], maxlen: c_size_t) -> c_size_t
+    def SDL_utf8strlcpy(dst: Pointer[char], src: Pointer[char], dst_bytes: c_size_t) -> c_size_t
+    def SDL_strlcat(dst: Pointer[char], src: Pointer[char], maxlen: c_size_t) -> c_size_t
+    def SDL_strdup(str: Pointer[char]) -> Pointer[char]
+    def SDL_strrev(str: Pointer[char]) -> Pointer[char]
+    def SDL_strupr(str: Pointer[char]) -> Pointer[char]
+    def SDL_strlwr(str: Pointer[char]) -> Pointer[char]
+    def SDL_strchr(str: Pointer[char], c: c_int) -> Pointer[char]
+    def SDL_strrchr(str: Pointer[char], c: c_int) -> Pointer[char]
+    def SDL_strstr(haystack: Pointer[char], needle: Pointer[char]) -> Pointer[char]
+    def SDL_strcasestr(haystack: Pointer[char], needle: Pointer[char]) -> Pointer[char]
+    def SDL_strtokr(s1: Pointer[char], s2: Pointer[char], saveptr: Pointer[Pointer[char]]) -> Pointer[char]
+    def SDL_utf8strlen(str: Pointer[char]) -> c_size_t
+    def SDL_utf8strnlen(str: Pointer[char], bytes: c_size_t) -> c_size_t
+    def SDL_itoa(value: c_int, str: Pointer[char], radix: c_int) -> Pointer[char]
+    def SDL_uitoa(value: c_uint, str: Pointer[char], radix: c_int) -> Pointer[char]
+    def SDL_ltoa(value: c_long, str: Pointer[char], radix: c_int) -> Pointer[char]
+    def SDL_ultoa(value: c_ulong, str: Pointer[char], radix: c_int) -> Pointer[char]
+    def SDL_lltoa(value: Sint64, str: Pointer[char], radix: c_int) -> Pointer[char]
+    def SDL_ulltoa(value: Uint64, str: Pointer[char], radix: c_int) -> Pointer[char]
+    def SDL_atoi(str: Pointer[char]) -> c_int
+    def SDL_atof(str: Pointer[char]) -> c_double
+    def SDL_strtol(str: Pointer[char], endp: Pointer[Pointer[char]], base: c_int) -> c_long
+    def SDL_strtoul(str: Pointer[char], endp: Pointer[Pointer[char]], base: c_int) -> c_ulong
+    def SDL_strtoll(str: Pointer[char], endp: Pointer[Pointer[char]], base: c_int) -> Sint64
+    def SDL_strtoull(str: Pointer[char], endp: Pointer[Pointer[char]], base: c_int) -> Uint64
+    def SDL_strtod(str: Pointer[char], endp: Pointer[Pointer[char]]) -> c_double
+    def SDL_strcmp(str1: Pointer[char], str2: Pointer[char]) -> c_int
+    def SDL_strncmp(str1: Pointer[char], str2: Pointer[char], maxlen: c_size_t) -> c_int
+    def SDL_strcasecmp(str1: Pointer[char], str2: Pointer[char]) -> c_int
+    def SDL_strncasecmp(str1: Pointer[char], str2: Pointer[char], len: c_size_t) -> c_int
+    def SDL_sscanf(text: Pointer[char], fmt: Pointer[char], args...) -> c_int
+    def SDL_vsscanf(text: Pointer[char], fmt: Pointer[char], ap: Pointer[void]) -> c_int
+    def SDL_snprintf(text: Pointer[char], maxlen: c_size_t, fmt: Pointer[char], args...) -> c_int
+    def SDL_vsnprintf(text: Pointer[char], maxlen: c_size_t, fmt: Pointer[char], ap: Pointer[void]) -> c_int
+    def SDL_asprintf(strp: Pointer[Pointer[char]], fmt: Pointer[char], args...) -> c_int
+    def SDL_vasprintf(strp: Pointer[Pointer[char]], fmt: Pointer[char], ap: Pointer[void]) -> c_int
+    def SDL_acos(x: c_double) -> c_double
+    def SDL_acosf(x: c_float) -> c_float
+    def SDL_asin(x: c_double) -> c_double
+    def SDL_asinf(x: c_float) -> c_float
+    def SDL_atan(x: c_double) -> c_double
+    def SDL_atanf(x: c_float) -> c_float
+    def SDL_atan2(y: c_double, x: c_double) -> c_double
+    def SDL_atan2f(y: c_float, x: c_float) -> c_float
+    def SDL_ceil(x: c_double) -> c_double
+    def SDL_ceilf(x: c_float) -> c_float
+    def SDL_copysign(x: c_double, y: c_double) -> c_double
+    def SDL_copysignf(x: c_float, y: c_float) -> c_float
+    def SDL_cos(x: c_double) -> c_double
+    def SDL_cosf(x: c_float) -> c_float
+    def SDL_exp(x: c_double) -> c_double
+    def SDL_expf(x: c_float) -> c_float
+    def SDL_fabs(x: c_double) -> c_double
+    def SDL_fabsf(x: c_float) -> c_float
+    def SDL_floor(x: c_double) -> c_double
+    def SDL_floorf(x: c_float) -> c_float
+    def SDL_trunc(x: c_double) -> c_double
+    def SDL_truncf(x: c_float) -> c_float
+    def SDL_fmod(x: c_double, y: c_double) -> c_double
+    def SDL_fmodf(x: c_float, y: c_float) -> c_float
+    def SDL_log(x: c_double) -> c_double
+    def SDL_logf(x: c_float) -> c_float
+    def SDL_log10(x: c_double) -> c_double
+    def SDL_log10f(x: c_float) -> c_float
+    def SDL_pow(x: c_double, y: c_double) -> c_double
+    def SDL_powf(x: c_float, y: c_float) -> c_float
+    def SDL_round(x: c_double) -> c_double
+    def SDL_roundf(x: c_float) -> c_float
+    def SDL_lround(x: c_double) -> c_long
+    def SDL_lroundf(x: c_float) -> c_long
+    def SDL_scalbn(x: c_double, n: c_int) -> c_double
+    def SDL_scalbnf(x: c_float, n: c_int) -> c_float
+    def SDL_sin(x: c_double) -> c_double
+    def SDL_sinf(x: c_float) -> c_float
+    def SDL_sqrt(x: c_double) -> c_double
+    def SDL_sqrtf(x: c_float) -> c_float
+    def SDL_tan(x: c_double) -> c_double
+    def SDL_tanf(x: c_float) -> c_float
+    def SDL_iconv_open(tocode: Pointer[char], fromcode: Pointer[char]) -> SDL_iconv_t
+    def SDL_iconv_close(cd: SDL_iconv_t) -> c_int
+    def SDL_iconv(cd: SDL_iconv_t, inbuf: Pointer[Pointer[char]], inbytesleft: Pointer[c_size_t], outbuf: Pointer[Pointer[char]], outbytesleft: Pointer[c_size_t]) -> c_size_t
+    def SDL_iconv_string(tocode: Pointer[char], fromcode: Pointer[char], inbuf: Pointer[char], inbytesleft: c_size_t) -> Pointer[char]
+    def SDL_main(argc: c_int, argv: Pointer[Pointer[char]]) -> c_int
+    def SDL_SetMainReady()
+    def SDL_RegisterApp(name: Pointer[char], style: Uint32, hInst: Pointer[void]) -> c_int
+    def SDL_UnregisterApp()
+    def SDL_ReportAssertion(arg0: Pointer[SDL_AssertData], arg1: Pointer[char], arg2: Pointer[char], arg3: c_int) -> SDL_AssertState
+    def SDL_SetAssertionHandler(handler: SDL_AssertionHandler, userdata: Pointer[void])
+    def SDL_GetDefaultAssertionHandler() -> SDL_AssertionHandler
+    def SDL_GetAssertionHandler(puserdata: Pointer[Pointer[void]]) -> SDL_AssertionHandler
+    def SDL_GetAssertionReport() -> Pointer[SDL_AssertData]
+    def SDL_ResetAssertionReport()
+    def SDL_AtomicTryLock(lock: Pointer[SDL_SpinLock]) -> SDL_bool
+    def SDL_AtomicLock(lock: Pointer[SDL_SpinLock])
+    def SDL_AtomicUnlock(lock: Pointer[SDL_SpinLock])
+    def SDL_MemoryBarrierReleaseFunction()
+    def SDL_MemoryBarrierAcquireFunction()
+    def SDL_AtomicCAS(a: Pointer[SDL_atomic_t], oldval: c_int, newval: c_int) -> SDL_bool
+    def SDL_AtomicSet(a: Pointer[SDL_atomic_t], v: c_int) -> c_int
+    def SDL_AtomicGet(a: Pointer[SDL_atomic_t]) -> c_int
+    def SDL_AtomicAdd(a: Pointer[SDL_atomic_t], v: c_int) -> c_int
+    def SDL_AtomicCASPtr(a: Pointer[Pointer[void]], oldval: Pointer[void], newval: Pointer[void]) -> SDL_bool
+    def SDL_AtomicSetPtr(a: Pointer[Pointer[void]], v: Pointer[void]) -> Pointer[void]
+    def SDL_AtomicGetPtr(a: Pointer[Pointer[void]]) -> Pointer[void]
+    def SDL_SetError(fmt: Pointer[char], args...) -> c_int
+    def SDL_GetError() -> Pointer[char]
+    def SDL_GetErrorMsg(errstr: Pointer[char], maxlen: c_int) -> Pointer[char]
+    def SDL_ClearError()
+    def SDL_Error(code: SDL_errorcode) -> c_int
+    def SDL_CreateMutex() -> Pointer[SDL_mutex]
+    def SDL_LockMutex(mutex: Pointer[SDL_mutex]) -> c_int
+    def SDL_TryLockMutex(mutex: Pointer[SDL_mutex]) -> c_int
+    def SDL_UnlockMutex(mutex: Pointer[SDL_mutex]) -> c_int
+    def SDL_DestroyMutex(mutex: Pointer[SDL_mutex])
+    def SDL_CreateSemaphore(initial_value: Uint32) -> Pointer[SDL_sem]
+    def SDL_DestroySemaphore(sem: Pointer[SDL_sem])
+    def SDL_SemWait(sem: Pointer[SDL_sem]) -> c_int
+    def SDL_SemTryWait(sem: Pointer[SDL_sem]) -> c_int
+    def SDL_SemWaitTimeout(sem: Pointer[SDL_sem], timeout: Uint32) -> c_int
+    def SDL_SemPost(sem: Pointer[SDL_sem]) -> c_int
+    def SDL_SemValue(sem: Pointer[SDL_sem]) -> Uint32
+    def SDL_CreateCond() -> Pointer[SDL_cond]
+    def SDL_DestroyCond(cond: Pointer[SDL_cond])
+    def SDL_CondSignal(cond: Pointer[SDL_cond]) -> c_int
+    def SDL_CondBroadcast(cond: Pointer[SDL_cond]) -> c_int
+    def SDL_CondWait(cond: Pointer[SDL_cond], mutex: Pointer[SDL_mutex]) -> c_int
+    def SDL_CondWaitTimeout(cond: Pointer[SDL_cond], mutex: Pointer[SDL_mutex], ms: Uint32) -> c_int
+    def SDL_CreateThread(fn: SDL_ThreadFunction, name: Pointer[char], data: Pointer[void], pfnBeginThread: pfnSDL_CurrentBeginThread, pfnEndThread: pfnSDL_CurrentEndThread) -> Pointer[SDL_Thread]
+    def SDL_CreateThreadWithStackSize(fn: SDL_ThreadFunction, name: Pointer[char], stacksize: c_size_t, data: Pointer[void], pfnBeginThread: pfnSDL_CurrentBeginThread, pfnEndThread: pfnSDL_CurrentEndThread) -> Pointer[SDL_Thread]
+    def SDL_GetThreadName(thread: Pointer[SDL_Thread]) -> Pointer[char]
+    def SDL_ThreadID() -> SDL_threadID
+    def SDL_GetThreadID(thread: Pointer[SDL_Thread]) -> SDL_threadID
+    def SDL_SetThreadPriority(priority: SDL_ThreadPriority) -> c_int
+    def SDL_WaitThread(thread: Pointer[SDL_Thread], status: Pointer[c_int])
+    def SDL_DetachThread(thread: Pointer[SDL_Thread])
+    def SDL_TLSCreate() -> SDL_TLSID
+    def SDL_TLSGet(id: SDL_TLSID) -> Pointer[void]
+    def SDL_TLSSet(id: SDL_TLSID, value: Pointer[void], destructor: SDL_TLSDestructorCallback) -> c_int
+    def SDL_TLSCleanup()
+    def SDL_RWFromFile(file: Pointer[char], mode: Pointer[char]) -> Pointer[SDL_RWops]
+    def SDL_RWFromFP(fp: Pointer[FILE], autoclose: SDL_bool) -> Pointer[SDL_RWops]
+    def SDL_RWFromMem(mem: Pointer[void], size: c_int) -> Pointer[SDL_RWops]
+    def SDL_RWFromConstMem(mem: Pointer[void], size: c_int) -> Pointer[SDL_RWops]
+    def SDL_AllocRW() -> Pointer[SDL_RWops]
+    def SDL_FreeRW(area: Pointer[SDL_RWops])
+    def SDL_RWsize(context: Pointer[SDL_RWops]) -> Sint64
+    def SDL_RWseek(context: Pointer[SDL_RWops], offset: Sint64, whence: c_int) -> Sint64
+    def SDL_RWtell(context: Pointer[SDL_RWops]) -> Sint64
+    def SDL_RWread(context: Pointer[SDL_RWops], ptr: Pointer[void], size: c_size_t, maxnum: c_size_t) -> c_size_t
+    def SDL_RWwrite(context: Pointer[SDL_RWops], ptr: Pointer[void], size: c_size_t, num: c_size_t) -> c_size_t
+    def SDL_RWclose(context: Pointer[SDL_RWops]) -> c_int
+    def SDL_LoadFile_RW(src: Pointer[SDL_RWops], datasize: Pointer[c_size_t], freesrc: c_int) -> Pointer[void]
+    def SDL_LoadFile(file: Pointer[char], datasize: Pointer[c_size_t]) -> Pointer[void]
+    def SDL_ReadU8(src: Pointer[SDL_RWops]) -> Uint8
+    def SDL_ReadLE16(src: Pointer[SDL_RWops]) -> Uint16
+    def SDL_ReadBE16(src: Pointer[SDL_RWops]) -> Uint16
+    def SDL_ReadLE32(src: Pointer[SDL_RWops]) -> Uint32
+    def SDL_ReadBE32(src: Pointer[SDL_RWops]) -> Uint32
+    def SDL_ReadLE64(src: Pointer[SDL_RWops]) -> Uint64
+    def SDL_ReadBE64(src: Pointer[SDL_RWops]) -> Uint64
+    def SDL_WriteU8(dst: Pointer[SDL_RWops], value: Uint8) -> c_size_t
+    def SDL_WriteLE16(dst: Pointer[SDL_RWops], value: Uint16) -> c_size_t
+    def SDL_WriteBE16(dst: Pointer[SDL_RWops], value: Uint16) -> c_size_t
+    def SDL_WriteLE32(dst: Pointer[SDL_RWops], value: Uint32) -> c_size_t
+    def SDL_WriteBE32(dst: Pointer[SDL_RWops], value: Uint32) -> c_size_t
+    def SDL_WriteLE64(dst: Pointer[SDL_RWops], value: Uint64) -> c_size_t
+    def SDL_WriteBE64(dst: Pointer[SDL_RWops], value: Uint64) -> c_size_t
+    def SDL_GetNumAudioDrivers() -> c_int
+    def SDL_GetAudioDriver(index: c_int) -> Pointer[char]
+    def SDL_AudioInit(driver_name: Pointer[char]) -> c_int
+    def SDL_AudioQuit()
+    def SDL_GetCurrentAudioDriver() -> Pointer[char]
+    def SDL_OpenAudio(desired: Pointer[SDL_AudioSpec], obtained: Pointer[SDL_AudioSpec]) -> c_int
+    def SDL_GetNumAudioDevices(iscapture: c_int) -> c_int
+    def SDL_GetAudioDeviceName(index: c_int, iscapture: c_int) -> Pointer[char]
+    def SDL_GetAudioDeviceSpec(index: c_int, iscapture: c_int, spec: Pointer[SDL_AudioSpec]) -> c_int
+    def SDL_GetDefaultAudioInfo(name: Pointer[Pointer[char]], spec: Pointer[SDL_AudioSpec], iscapture: c_int) -> c_int
+    def SDL_OpenAudioDevice(device: Pointer[char], iscapture: c_int, desired: Pointer[SDL_AudioSpec], obtained: Pointer[SDL_AudioSpec], allowed_changes: c_int) -> SDL_AudioDeviceID
+    def SDL_GetAudioStatus() -> SDL_AudioStatus
+    def SDL_GetAudioDeviceStatus(dev: SDL_AudioDeviceID) -> SDL_AudioStatus
+    def SDL_PauseAudio(pause_on: c_int)
+    def SDL_PauseAudioDevice(dev: SDL_AudioDeviceID, pause_on: c_int)
+    def SDL_LoadWAV_RW(src: Pointer[SDL_RWops], freesrc: c_int, spec: Pointer[SDL_AudioSpec], audio_buf: Pointer[Pointer[Uint8]], audio_len: Pointer[Uint32]) -> Pointer[SDL_AudioSpec]
+    def SDL_FreeWAV(audio_buf: Pointer[Uint8])
+    def SDL_BuildAudioCVT(cvt: Pointer[SDL_AudioCVT], src_format: SDL_AudioFormat, src_channels: Uint8, src_rate: c_int, dst_format: SDL_AudioFormat, dst_channels: Uint8, dst_rate: c_int) -> c_int
+    def SDL_ConvertAudio(cvt: Pointer[SDL_AudioCVT]) -> c_int
+    def SDL_NewAudioStream(src_format: SDL_AudioFormat, src_channels: Uint8, src_rate: c_int, dst_format: SDL_AudioFormat, dst_channels: Uint8, dst_rate: c_int) -> Pointer[SDL_AudioStream]
+    def SDL_AudioStreamPut(stream: Pointer[SDL_AudioStream], buf: Pointer[void], len: c_int) -> c_int
+    def SDL_AudioStreamGet(stream: Pointer[SDL_AudioStream], buf: Pointer[void], len: c_int) -> c_int
+    def SDL_AudioStreamAvailable(stream: Pointer[SDL_AudioStream]) -> c_int
+    def SDL_AudioStreamFlush(stream: Pointer[SDL_AudioStream]) -> c_int
+    def SDL_AudioStreamClear(stream: Pointer[SDL_AudioStream])
+    def SDL_FreeAudioStream(stream: Pointer[SDL_AudioStream])
+    def SDL_MixAudio(dst: Pointer[Uint8], src: Pointer[Uint8], len: Uint32, volume: c_int)
+    def SDL_MixAudioFormat(dst: Pointer[Uint8], src: Pointer[Uint8], format: SDL_AudioFormat, len: Uint32, volume: c_int)
+    def SDL_QueueAudio(dev: SDL_AudioDeviceID, data: Pointer[void], len: Uint32) -> c_int
+    def SDL_DequeueAudio(dev: SDL_AudioDeviceID, data: Pointer[void], len: Uint32) -> Uint32
+    def SDL_GetQueuedAudioSize(dev: SDL_AudioDeviceID) -> Uint32
+    def SDL_ClearQueuedAudio(dev: SDL_AudioDeviceID)
+    def SDL_LockAudio()
+    def SDL_LockAudioDevice(dev: SDL_AudioDeviceID)
+    def SDL_UnlockAudio()
+    def SDL_UnlockAudioDevice(dev: SDL_AudioDeviceID)
+    def SDL_CloseAudio()
+    def SDL_CloseAudioDevice(dev: SDL_AudioDeviceID)
+    def SDL_SetClipboardText(text: Pointer[char]) -> c_int
+    def SDL_GetClipboardText() -> Pointer[char]
+    def SDL_HasClipboardText() -> SDL_bool
+    def SDL_SetPrimarySelectionText(text: Pointer[char]) -> c_int
+    def SDL_GetPrimarySelectionText() -> Pointer[char]
+    def SDL_HasPrimarySelectionText() -> SDL_bool
+    def SDL_GetCPUCount() -> c_int
+    def SDL_GetCPUCacheLineSize() -> c_int
+    def SDL_HasRDTSC() -> SDL_bool
+    def SDL_HasAltiVec() -> SDL_bool
+    def SDL_HasMMX() -> SDL_bool
+    def SDL_Has3DNow() -> SDL_bool
+    def SDL_HasSSE() -> SDL_bool
+    def SDL_HasSSE2() -> SDL_bool
+    def SDL_HasSSE3() -> SDL_bool
+    def SDL_HasSSE41() -> SDL_bool
+    def SDL_HasSSE42() -> SDL_bool
+    def SDL_HasAVX() -> SDL_bool
+    def SDL_HasAVX2() -> SDL_bool
+    def SDL_HasAVX512F() -> SDL_bool
+    def SDL_HasARMSIMD() -> SDL_bool
+    def SDL_HasNEON() -> SDL_bool
+    def SDL_HasLSX() -> SDL_bool
+    def SDL_HasLASX() -> SDL_bool
+    def SDL_GetSystemRAM() -> c_int
+    def SDL_SIMDGetAlignment() -> c_size_t
+    def SDL_SIMDAlloc(len: c_size_t) -> Pointer[void]
+    def SDL_SIMDRealloc(mem: Pointer[void], len: c_size_t) -> Pointer[void]
+    def SDL_SIMDFree(ptr: Pointer[void])
+    def SDL_GetPixelFormatName(format: Uint32) -> Pointer[char]
+    def SDL_PixelFormatEnumToMasks(format: Uint32, bpp: Pointer[c_int], Rmask: Pointer[Uint32], Gmask: Pointer[Uint32], Bmask: Pointer[Uint32], Amask: Pointer[Uint32]) -> SDL_bool
+    def SDL_MasksToPixelFormatEnum(bpp: c_int, Rmask: Uint32, Gmask: Uint32, Bmask: Uint32, Amask: Uint32) -> Uint32
+    def SDL_AllocFormat(pixel_format: Uint32) -> Pointer[SDL_PixelFormat]
+    def SDL_FreeFormat(format: Pointer[SDL_PixelFormat])
+    def SDL_AllocPalette(ncolors: c_int) -> Pointer[SDL_Palette]
+    def SDL_SetPixelFormatPalette(format: Pointer[SDL_PixelFormat], palette: Pointer[SDL_Palette]) -> c_int
+    def SDL_SetPaletteColors(palette: Pointer[SDL_Palette], colors: Pointer[SDL_Color], firstcolor: c_int, ncolors: c_int) -> c_int
+    def SDL_FreePalette(palette: Pointer[SDL_Palette])
+    def SDL_MapRGB(format: Pointer[SDL_PixelFormat], r: Uint8, g: Uint8, b: Uint8) -> Uint32
+    def SDL_MapRGBA(format: Pointer[SDL_PixelFormat], r: Uint8, g: Uint8, b: Uint8, a: Uint8) -> Uint32
+    def SDL_GetRGB(pixel: Uint32, format: Pointer[SDL_PixelFormat], r: Pointer[Uint8], g: Pointer[Uint8], b: Pointer[Uint8])
+    def SDL_GetRGBA(pixel: Uint32, format: Pointer[SDL_PixelFormat], r: Pointer[Uint8], g: Pointer[Uint8], b: Pointer[Uint8], a: Pointer[Uint8])
+    def SDL_CalculateGammaRamp(gamma: c_float, ramp: Pointer[Uint16])
+    def SDL_HasIntersection(A: Pointer[SDL_Rect], B: Pointer[SDL_Rect]) -> SDL_bool
+    def SDL_IntersectRect(A: Pointer[SDL_Rect], B: Pointer[SDL_Rect], result: Pointer[SDL_Rect]) -> SDL_bool
+    def SDL_UnionRect(A: Pointer[SDL_Rect], B: Pointer[SDL_Rect], result: Pointer[SDL_Rect])
+    def SDL_EnclosePoints(points: Pointer[SDL_Point], count: c_int, clip: Pointer[SDL_Rect], result: Pointer[SDL_Rect]) -> SDL_bool
+    def SDL_IntersectRectAndLine(rect: Pointer[SDL_Rect], X1: Pointer[c_int], Y1: Pointer[c_int], X2: Pointer[c_int], Y2: Pointer[c_int]) -> SDL_bool
+    def SDL_HasIntersectionF(A: Pointer[SDL_FRect], B: Pointer[SDL_FRect]) -> SDL_bool
+    def SDL_IntersectFRect(A: Pointer[SDL_FRect], B: Pointer[SDL_FRect], result: Pointer[SDL_FRect]) -> SDL_bool
+    def SDL_UnionFRect(A: Pointer[SDL_FRect], B: Pointer[SDL_FRect], result: Pointer[SDL_FRect])
+    def SDL_EncloseFPoints(points: Pointer[SDL_FPoint], count: c_int, clip: Pointer[SDL_FRect], result: Pointer[SDL_FRect]) -> SDL_bool
+    def SDL_IntersectFRectAndLine(rect: Pointer[SDL_FRect], X1: Pointer[c_float], Y1: Pointer[c_float], X2: Pointer[c_float], Y2: Pointer[c_float]) -> SDL_bool
+    def SDL_ComposeCustomBlendMode(srcColorFactor: SDL_BlendFactor, dstColorFactor: SDL_BlendFactor, colorOperation: SDL_BlendOperation, srcAlphaFactor: SDL_BlendFactor, dstAlphaFactor: SDL_BlendFactor, alphaOperation: SDL_BlendOperation) -> SDL_BlendMode
+    def SDL_CreateRGBSurface(flags: Uint32, width: c_int, height: c_int, depth: c_int, Rmask: Uint32, Gmask: Uint32, Bmask: Uint32, Amask: Uint32) -> Pointer[SDL_Surface]
+    def SDL_CreateRGBSurfaceWithFormat(flags: Uint32, width: c_int, height: c_int, depth: c_int, format: Uint32) -> Pointer[SDL_Surface]
+    def SDL_CreateRGBSurfaceFrom(pixels: Pointer[void], width: c_int, height: c_int, depth: c_int, pitch: c_int, Rmask: Uint32, Gmask: Uint32, Bmask: Uint32, Amask: Uint32) -> Pointer[SDL_Surface]
+    def SDL_CreateRGBSurfaceWithFormatFrom(pixels: Pointer[void], width: c_int, height: c_int, depth: c_int, pitch: c_int, format: Uint32) -> Pointer[SDL_Surface]
+    def SDL_FreeSurface(surface: Pointer[SDL_Surface])
+    def SDL_SetSurfacePalette(surface: Pointer[SDL_Surface], palette: Pointer[SDL_Palette]) -> c_int
+    def SDL_LockSurface(surface: Pointer[SDL_Surface]) -> c_int
+    def SDL_UnlockSurface(surface: Pointer[SDL_Surface])
+    def SDL_LoadBMP_RW(src: Pointer[SDL_RWops], freesrc: c_int) -> Pointer[SDL_Surface]
+    def SDL_SaveBMP_RW(surface: Pointer[SDL_Surface], dst: Pointer[SDL_RWops], freedst: c_int) -> c_int
+    def SDL_SetSurfaceRLE(surface: Pointer[SDL_Surface], flag: c_int) -> c_int
+    def SDL_HasSurfaceRLE(surface: Pointer[SDL_Surface]) -> SDL_bool
+    def SDL_SetColorKey(surface: Pointer[SDL_Surface], flag: c_int, key: Uint32) -> c_int
+    def SDL_HasColorKey(surface: Pointer[SDL_Surface]) -> SDL_bool
+    def SDL_GetColorKey(surface: Pointer[SDL_Surface], key: Pointer[Uint32]) -> c_int
+    def SDL_SetSurfaceColorMod(surface: Pointer[SDL_Surface], r: Uint8, g: Uint8, b: Uint8) -> c_int
+    def SDL_GetSurfaceColorMod(surface: Pointer[SDL_Surface], r: Pointer[Uint8], g: Pointer[Uint8], b: Pointer[Uint8]) -> c_int
+    def SDL_SetSurfaceAlphaMod(surface: Pointer[SDL_Surface], alpha: Uint8) -> c_int
+    def SDL_GetSurfaceAlphaMod(surface: Pointer[SDL_Surface], alpha: Pointer[Uint8]) -> c_int
+    def SDL_SetSurfaceBlendMode(surface: Pointer[SDL_Surface], blendMode: SDL_BlendMode) -> c_int
+    def SDL_GetSurfaceBlendMode(surface: Pointer[SDL_Surface], blendMode: Pointer[SDL_BlendMode]) -> c_int
+    def SDL_SetClipRect(surface: Pointer[SDL_Surface], rect: Pointer[SDL_Rect]) -> SDL_bool
+    def SDL_GetClipRect(surface: Pointer[SDL_Surface], rect: Pointer[SDL_Rect])
+    def SDL_DuplicateSurface(surface: Pointer[SDL_Surface]) -> Pointer[SDL_Surface]
+    def SDL_ConvertSurface(src: Pointer[SDL_Surface], fmt: Pointer[SDL_PixelFormat], flags: Uint32) -> Pointer[SDL_Surface]
+    def SDL_ConvertSurfaceFormat(src: Pointer[SDL_Surface], pixel_format: Uint32, flags: Uint32) -> Pointer[SDL_Surface]
+    def SDL_ConvertPixels(width: c_int, height: c_int, src_format: Uint32, src: Pointer[void], src_pitch: c_int, dst_format: Uint32, dst: Pointer[void], dst_pitch: c_int) -> c_int
+    def SDL_PremultiplyAlpha(width: c_int, height: c_int, src_format: Uint32, src: Pointer[void], src_pitch: c_int, dst_format: Uint32, dst: Pointer[void], dst_pitch: c_int) -> c_int
+    def SDL_FillRect(dst: Pointer[SDL_Surface], rect: Pointer[SDL_Rect], color: Uint32) -> c_int
+    def SDL_FillRects(dst: Pointer[SDL_Surface], rects: Pointer[SDL_Rect], count: c_int, color: Uint32) -> c_int
+    def SDL_UpperBlit(src: Pointer[SDL_Surface], srcrect: Pointer[SDL_Rect], dst: Pointer[SDL_Surface], dstrect: Pointer[SDL_Rect]) -> c_int
+    def SDL_LowerBlit(src: Pointer[SDL_Surface], srcrect: Pointer[SDL_Rect], dst: Pointer[SDL_Surface], dstrect: Pointer[SDL_Rect]) -> c_int
+    def SDL_SoftStretch(src: Pointer[SDL_Surface], srcrect: Pointer[SDL_Rect], dst: Pointer[SDL_Surface], dstrect: Pointer[SDL_Rect]) -> c_int
+    def SDL_SoftStretchLinear(src: Pointer[SDL_Surface], srcrect: Pointer[SDL_Rect], dst: Pointer[SDL_Surface], dstrect: Pointer[SDL_Rect]) -> c_int
+    def SDL_UpperBlitScaled(src: Pointer[SDL_Surface], srcrect: Pointer[SDL_Rect], dst: Pointer[SDL_Surface], dstrect: Pointer[SDL_Rect]) -> c_int
+    def SDL_LowerBlitScaled(src: Pointer[SDL_Surface], srcrect: Pointer[SDL_Rect], dst: Pointer[SDL_Surface], dstrect: Pointer[SDL_Rect]) -> c_int
+    def SDL_SetYUVConversionMode(mode: SDL_YUV_CONVERSION_MODE)
+    def SDL_GetYUVConversionMode() -> SDL_YUV_CONVERSION_MODE
+    def SDL_GetYUVConversionModeForResolution(width: c_int, height: c_int) -> SDL_YUV_CONVERSION_MODE
+    def SDL_GetNumVideoDrivers() -> c_int
+    def SDL_GetVideoDriver(index: c_int) -> Pointer[char]
+    def SDL_VideoInit(driver_name: Pointer[char]) -> c_int
+    def SDL_VideoQuit()
+    def SDL_GetCurrentVideoDriver() -> Pointer[char]
+    def SDL_GetNumVideoDisplays() -> c_int
+    def SDL_GetDisplayName(displayIndex: c_int) -> Pointer[char]
+    def SDL_GetDisplayBounds(displayIndex: c_int, rect: Pointer[SDL_Rect]) -> c_int
+    def SDL_GetDisplayUsableBounds(displayIndex: c_int, rect: Pointer[SDL_Rect]) -> c_int
+    def SDL_GetDisplayDPI(displayIndex: c_int, ddpi: Pointer[c_float], hdpi: Pointer[c_float], vdpi: Pointer[c_float]) -> c_int
+    def SDL_GetDisplayOrientation(displayIndex: c_int) -> SDL_DisplayOrientation
+    def SDL_GetNumDisplayModes(displayIndex: c_int) -> c_int
+    def SDL_GetDisplayMode(displayIndex: c_int, modeIndex: c_int, mode: Pointer[SDL_DisplayMode]) -> c_int
+    def SDL_GetDesktopDisplayMode(displayIndex: c_int, mode: Pointer[SDL_DisplayMode]) -> c_int
+    def SDL_GetCurrentDisplayMode(displayIndex: c_int, mode: Pointer[SDL_DisplayMode]) -> c_int
+    def SDL_GetClosestDisplayMode(displayIndex: c_int, mode: Pointer[SDL_DisplayMode], closest: Pointer[SDL_DisplayMode]) -> Pointer[SDL_DisplayMode]
+    def SDL_GetPointDisplayIndex(point: Pointer[SDL_Point]) -> c_int
+    def SDL_GetRectDisplayIndex(rect: Pointer[SDL_Rect]) -> c_int
+    def SDL_GetWindowDisplayIndex(window: Pointer[SDL_Window]) -> c_int
+    def SDL_SetWindowDisplayMode(window: Pointer[SDL_Window], mode: Pointer[SDL_DisplayMode]) -> c_int
+    def SDL_GetWindowDisplayMode(window: Pointer[SDL_Window], mode: Pointer[SDL_DisplayMode]) -> c_int
+    def SDL_GetWindowICCProfile(window: Pointer[SDL_Window], size: Pointer[c_size_t]) -> Pointer[void]
+    def SDL_GetWindowPixelFormat(window: Pointer[SDL_Window]) -> Uint32
+    def SDL_CreateWindow(title: Pointer[char], x: c_int, y: c_int, w: c_int, h: c_int, flags: Uint32) -> Pointer[SDL_Window]
+    def SDL_CreateWindowFrom(data: Pointer[void]) -> Pointer[SDL_Window]
+    def SDL_GetWindowID(window: Pointer[SDL_Window]) -> Uint32
+    def SDL_GetWindowFromID(id: Uint32) -> Pointer[SDL_Window]
+    def SDL_GetWindowFlags(window: Pointer[SDL_Window]) -> Uint32
+    def SDL_SetWindowTitle(window: Pointer[SDL_Window], title: Pointer[char])
+    def SDL_GetWindowTitle(window: Pointer[SDL_Window]) -> Pointer[char]
+    def SDL_SetWindowIcon(window: Pointer[SDL_Window], icon: Pointer[SDL_Surface])
+    def SDL_SetWindowData(window: Pointer[SDL_Window], name: Pointer[char], userdata: Pointer[void]) -> Pointer[void]
+    def SDL_GetWindowData(window: Pointer[SDL_Window], name: Pointer[char]) -> Pointer[void]
+    def SDL_SetWindowPosition(window: Pointer[SDL_Window], x: c_int, y: c_int)
+    def SDL_GetWindowPosition(window: Pointer[SDL_Window], x: Pointer[c_int], y: Pointer[c_int])
+    def SDL_SetWindowSize(window: Pointer[SDL_Window], w: c_int, h: c_int)
+    def SDL_GetWindowSize(window: Pointer[SDL_Window], w: Pointer[c_int], h: Pointer[c_int])
+    def SDL_GetWindowBordersSize(window: Pointer[SDL_Window], top: Pointer[c_int], left: Pointer[c_int], bottom: Pointer[c_int], right: Pointer[c_int]) -> c_int
+    def SDL_GetWindowSizeInPixels(window: Pointer[SDL_Window], w: Pointer[c_int], h: Pointer[c_int])
+    def SDL_SetWindowMinimumSize(window: Pointer[SDL_Window], min_w: c_int, min_h: c_int)
+    def SDL_GetWindowMinimumSize(window: Pointer[SDL_Window], w: Pointer[c_int], h: Pointer[c_int])
+    def SDL_SetWindowMaximumSize(window: Pointer[SDL_Window], max_w: c_int, max_h: c_int)
+    def SDL_GetWindowMaximumSize(window: Pointer[SDL_Window], w: Pointer[c_int], h: Pointer[c_int])
+    def SDL_SetWindowBordered(window: Pointer[SDL_Window], bordered: SDL_bool)
+    def SDL_SetWindowResizable(window: Pointer[SDL_Window], resizable: SDL_bool)
+    def SDL_SetWindowAlwaysOnTop(window: Pointer[SDL_Window], on_top: SDL_bool)
+    def SDL_ShowWindow(window: Pointer[SDL_Window])
+    def SDL_HideWindow(window: Pointer[SDL_Window])
+    def SDL_RaiseWindow(window: Pointer[SDL_Window])
+    def SDL_MaximizeWindow(window: Pointer[SDL_Window])
+    def SDL_MinimizeWindow(window: Pointer[SDL_Window])
+    def SDL_RestoreWindow(window: Pointer[SDL_Window])
+    def SDL_SetWindowFullscreen(window: Pointer[SDL_Window], flags: Uint32) -> c_int
+    def SDL_HasWindowSurface(window: Pointer[SDL_Window]) -> SDL_bool
+    def SDL_GetWindowSurface(window: Pointer[SDL_Window]) -> Pointer[SDL_Surface]
+    def SDL_UpdateWindowSurface(window: Pointer[SDL_Window]) -> c_int
+    def SDL_UpdateWindowSurfaceRects(window: Pointer[SDL_Window], rects: Pointer[SDL_Rect], numrects: c_int) -> c_int
+    def SDL_DestroyWindowSurface(window: Pointer[SDL_Window]) -> c_int
+    def SDL_SetWindowGrab(window: Pointer[SDL_Window], grabbed: SDL_bool)
+    def SDL_SetWindowKeyboardGrab(window: Pointer[SDL_Window], grabbed: SDL_bool)
+    def SDL_SetWindowMouseGrab(window: Pointer[SDL_Window], grabbed: SDL_bool)
+    def SDL_GetWindowGrab(window: Pointer[SDL_Window]) -> SDL_bool
+    def SDL_GetWindowKeyboardGrab(window: Pointer[SDL_Window]) -> SDL_bool
+    def SDL_GetWindowMouseGrab(window: Pointer[SDL_Window]) -> SDL_bool
+    def SDL_GetGrabbedWindow() -> Pointer[SDL_Window]
+    def SDL_SetWindowMouseRect(window: Pointer[SDL_Window], rect: Pointer[SDL_Rect]) -> c_int
+    def SDL_GetWindowMouseRect(window: Pointer[SDL_Window]) -> Pointer[SDL_Rect]
+    def SDL_SetWindowBrightness(window: Pointer[SDL_Window], brightness: c_float) -> c_int
+    def SDL_GetWindowBrightness(window: Pointer[SDL_Window]) -> c_float
+    def SDL_SetWindowOpacity(window: Pointer[SDL_Window], opacity: c_float) -> c_int
+    def SDL_GetWindowOpacity(window: Pointer[SDL_Window], out_opacity: Pointer[c_float]) -> c_int
+    def SDL_SetWindowModalFor(modal_window: Pointer[SDL_Window], parent_window: Pointer[SDL_Window]) -> c_int
+    def SDL_SetWindowInputFocus(window: Pointer[SDL_Window]) -> c_int
+    def SDL_SetWindowGammaRamp(window: Pointer[SDL_Window], red: Pointer[Uint16], green: Pointer[Uint16], blue: Pointer[Uint16]) -> c_int
+    def SDL_GetWindowGammaRamp(window: Pointer[SDL_Window], red: Pointer[Uint16], green: Pointer[Uint16], blue: Pointer[Uint16]) -> c_int
+    def SDL_SetWindowHitTest(window: Pointer[SDL_Window], callback: SDL_HitTest, callback_data: Pointer[void]) -> c_int
+    def SDL_FlashWindow(window: Pointer[SDL_Window], operation: SDL_FlashOperation) -> c_int
+    def SDL_DestroyWindow(window: Pointer[SDL_Window])
+    def SDL_IsScreenSaverEnabled() -> SDL_bool
+    def SDL_EnableScreenSaver()
+    def SDL_DisableScreenSaver()
+    def SDL_GL_LoadLibrary(path: Pointer[char]) -> c_int
+    def SDL_GL_GetProcAddress(proc: Pointer[char]) -> Pointer[void]
+    def SDL_GL_UnloadLibrary()
+    def SDL_GL_ExtensionSupported(extension: Pointer[char]) -> SDL_bool
+    def SDL_GL_ResetAttributes()
+    def SDL_GL_SetAttribute(attr: SDL_GLattr, value: c_int) -> c_int
+    def SDL_GL_GetAttribute(attr: SDL_GLattr, value: Pointer[c_int]) -> c_int
+    def SDL_GL_CreateContext(window: Pointer[SDL_Window]) -> SDL_GLContext
+    def SDL_GL_MakeCurrent(window: Pointer[SDL_Window], context: SDL_GLContext) -> c_int
+    def SDL_GL_GetCurrentWindow() -> Pointer[SDL_Window]
+    def SDL_GL_GetCurrentContext() -> SDL_GLContext
+    def SDL_GL_GetDrawableSize(window: Pointer[SDL_Window], w: Pointer[c_int], h: Pointer[c_int])
+    def SDL_GL_SetSwapInterval(interval: c_int) -> c_int
+    def SDL_GL_GetSwapInterval() -> c_int
+    def SDL_GL_SwapWindow(window: Pointer[SDL_Window])
+    def SDL_GL_DeleteContext(context: SDL_GLContext)
+    def SDL_GetKeyboardFocus() -> Pointer[SDL_Window]
+    def SDL_GetKeyboardState(numkeys: Pointer[c_int]) -> Pointer[Uint8]
+    def SDL_ResetKeyboard()
+    def SDL_GetModState() -> SDL_Keymod
+    def SDL_SetModState(modstate: SDL_Keymod)
+    def SDL_GetKeyFromScancode(scancode: SDL_Scancode) -> SDL_Keycode
+    def SDL_GetScancodeFromKey(key: SDL_Keycode) -> SDL_Scancode
+    def SDL_GetScancodeName(scancode: SDL_Scancode) -> Pointer[char]
+    def SDL_GetScancodeFromName(name: Pointer[char]) -> SDL_Scancode
+    def SDL_GetKeyName(key: SDL_Keycode) -> Pointer[char]
+    def SDL_GetKeyFromName(name: Pointer[char]) -> SDL_Keycode
+    def SDL_StartTextInput()
+    def SDL_IsTextInputActive() -> SDL_bool
+    def SDL_StopTextInput()
+    def SDL_ClearComposition()
+    def SDL_IsTextInputShown() -> SDL_bool
+    def SDL_SetTextInputRect(rect: Pointer[SDL_Rect])
+    def SDL_HasScreenKeyboardSupport() -> SDL_bool
+    def SDL_IsScreenKeyboardShown(window: Pointer[SDL_Window]) -> SDL_bool
+    def SDL_GetMouseFocus() -> Pointer[SDL_Window]
+    def SDL_GetMouseState(x: Pointer[c_int], y: Pointer[c_int]) -> Uint32
+    def SDL_GetGlobalMouseState(x: Pointer[c_int], y: Pointer[c_int]) -> Uint32
+    def SDL_GetRelativeMouseState(x: Pointer[c_int], y: Pointer[c_int]) -> Uint32
+    def SDL_WarpMouseInWindow(window: Pointer[SDL_Window], x: c_int, y: c_int)
+    def SDL_WarpMouseGlobal(x: c_int, y: c_int) -> c_int
+    def SDL_SetRelativeMouseMode(enabled: SDL_bool) -> c_int
+    def SDL_CaptureMouse(enabled: SDL_bool) -> c_int
+    def SDL_GetRelativeMouseMode() -> SDL_bool
+    def SDL_CreateCursor(data: Pointer[Uint8], mask: Pointer[Uint8], w: c_int, h: c_int, hot_x: c_int, hot_y: c_int) -> Pointer[SDL_Cursor]
+    def SDL_CreateColorCursor(surface: Pointer[SDL_Surface], hot_x: c_int, hot_y: c_int) -> Pointer[SDL_Cursor]
+    def SDL_CreateSystemCursor(id: SDL_SystemCursor) -> Pointer[SDL_Cursor]
+    def SDL_SetCursor(cursor: Pointer[SDL_Cursor])
+    def SDL_GetCursor() -> Pointer[SDL_Cursor]
+    def SDL_GetDefaultCursor() -> Pointer[SDL_Cursor]
+    def SDL_FreeCursor(cursor: Pointer[SDL_Cursor])
+    def SDL_ShowCursor(toggle: c_int) -> c_int
+    def SDL_GUIDToString(guid: SDL_GUID, pszGUID: Pointer[char], cbGUID: c_int)
+    def SDL_GUIDFromString(pchGUID: Pointer[char]) -> SDL_GUID
+    def SDL_LockJoysticks()
+    def SDL_UnlockJoysticks()
+    def SDL_NumJoysticks() -> c_int
+    def SDL_JoystickNameForIndex(device_index: c_int) -> Pointer[char]
+    def SDL_JoystickPathForIndex(device_index: c_int) -> Pointer[char]
+    def SDL_JoystickGetDevicePlayerIndex(device_index: c_int) -> c_int
+    def SDL_JoystickGetDeviceGUID(device_index: c_int) -> SDL_JoystickGUID
+    def SDL_JoystickGetDeviceVendor(device_index: c_int) -> Uint16
+    def SDL_JoystickGetDeviceProduct(device_index: c_int) -> Uint16
+    def SDL_JoystickGetDeviceProductVersion(device_index: c_int) -> Uint16
+    def SDL_JoystickGetDeviceType(device_index: c_int) -> SDL_JoystickType
+    def SDL_JoystickGetDeviceInstanceID(device_index: c_int) -> SDL_JoystickID
+    def SDL_JoystickOpen(device_index: c_int) -> Pointer[SDL_Joystick]
+    def SDL_JoystickFromInstanceID(instance_id: SDL_JoystickID) -> Pointer[SDL_Joystick]
+    def SDL_JoystickFromPlayerIndex(player_index: c_int) -> Pointer[SDL_Joystick]
+    def SDL_JoystickAttachVirtual(type_: SDL_JoystickType, naxes: c_int, nbuttons: c_int, nhats: c_int) -> c_int
+    def SDL_JoystickAttachVirtualEx(desc: Pointer[SDL_VirtualJoystickDesc]) -> c_int
+    def SDL_JoystickDetachVirtual(device_index: c_int) -> c_int
+    def SDL_JoystickIsVirtual(device_index: c_int) -> SDL_bool
+    def SDL_JoystickSetVirtualAxis(joystick: Pointer[SDL_Joystick], axis: c_int, value: Sint16) -> c_int
+    def SDL_JoystickSetVirtualButton(joystick: Pointer[SDL_Joystick], button: c_int, value: Uint8) -> c_int
+    def SDL_JoystickSetVirtualHat(joystick: Pointer[SDL_Joystick], hat: c_int, value: Uint8) -> c_int
+    def SDL_JoystickName(joystick: Pointer[SDL_Joystick]) -> Pointer[char]
+    def SDL_JoystickPath(joystick: Pointer[SDL_Joystick]) -> Pointer[char]
+    def SDL_JoystickGetPlayerIndex(joystick: Pointer[SDL_Joystick]) -> c_int
+    def SDL_JoystickSetPlayerIndex(joystick: Pointer[SDL_Joystick], player_index: c_int)
+    def SDL_JoystickGetGUID(joystick: Pointer[SDL_Joystick]) -> SDL_JoystickGUID
+    def SDL_JoystickGetVendor(joystick: Pointer[SDL_Joystick]) -> Uint16
+    def SDL_JoystickGetProduct(joystick: Pointer[SDL_Joystick]) -> Uint16
+    def SDL_JoystickGetProductVersion(joystick: Pointer[SDL_Joystick]) -> Uint16
+    def SDL_JoystickGetFirmwareVersion(joystick: Pointer[SDL_Joystick]) -> Uint16
+    def SDL_JoystickGetSerial(joystick: Pointer[SDL_Joystick]) -> Pointer[char]
+    def SDL_JoystickGetType(joystick: Pointer[SDL_Joystick]) -> SDL_JoystickType
+    def SDL_JoystickGetGUIDString(guid: SDL_JoystickGUID, pszGUID: Pointer[char], cbGUID: c_int)
+    def SDL_JoystickGetGUIDFromString(pchGUID: Pointer[char]) -> SDL_JoystickGUID
+    def SDL_GetJoystickGUIDInfo(guid: SDL_JoystickGUID, vendor: Pointer[Uint16], product: Pointer[Uint16], version: Pointer[Uint16], crc16: Pointer[Uint16])
+    def SDL_JoystickGetAttached(joystick: Pointer[SDL_Joystick]) -> SDL_bool
+    def SDL_JoystickInstanceID(joystick: Pointer[SDL_Joystick]) -> SDL_JoystickID
+    def SDL_JoystickNumAxes(joystick: Pointer[SDL_Joystick]) -> c_int
+    def SDL_JoystickNumBalls(joystick: Pointer[SDL_Joystick]) -> c_int
+    def SDL_JoystickNumHats(joystick: Pointer[SDL_Joystick]) -> c_int
+    def SDL_JoystickNumButtons(joystick: Pointer[SDL_Joystick]) -> c_int
+    def SDL_JoystickUpdate()
+    def SDL_JoystickEventState(state: c_int) -> c_int
+    def SDL_JoystickGetAxis(joystick: Pointer[SDL_Joystick], axis: c_int) -> Sint16
+    def SDL_JoystickGetAxisInitialState(joystick: Pointer[SDL_Joystick], axis: c_int, state: Pointer[Sint16]) -> SDL_bool
+    def SDL_JoystickGetHat(joystick: Pointer[SDL_Joystick], hat: c_int) -> Uint8
+    def SDL_JoystickGetBall(joystick: Pointer[SDL_Joystick], ball: c_int, dx: Pointer[c_int], dy: Pointer[c_int]) -> c_int
+    def SDL_JoystickGetButton(joystick: Pointer[SDL_Joystick], button: c_int) -> Uint8
+    def SDL_JoystickRumble(joystick: Pointer[SDL_Joystick], low_frequency_rumble: Uint16, high_frequency_rumble: Uint16, duration_ms: Uint32) -> c_int
+    def SDL_JoystickRumbleTriggers(joystick: Pointer[SDL_Joystick], left_rumble: Uint16, right_rumble: Uint16, duration_ms: Uint32) -> c_int
+    def SDL_JoystickHasLED(joystick: Pointer[SDL_Joystick]) -> SDL_bool
+    def SDL_JoystickHasRumble(joystick: Pointer[SDL_Joystick]) -> SDL_bool
+    def SDL_JoystickHasRumbleTriggers(joystick: Pointer[SDL_Joystick]) -> SDL_bool
+    def SDL_JoystickSetLED(joystick: Pointer[SDL_Joystick], red: Uint8, green: Uint8, blue: Uint8) -> c_int
+    def SDL_JoystickSendEffect(joystick: Pointer[SDL_Joystick], data: Pointer[void], size: c_int) -> c_int
+    def SDL_JoystickClose(joystick: Pointer[SDL_Joystick])
+    def SDL_JoystickCurrentPowerLevel(joystick: Pointer[SDL_Joystick]) -> SDL_JoystickPowerLevel
+    def SDL_LockSensors()
+    def SDL_UnlockSensors()
+    def SDL_NumSensors() -> c_int
+    def SDL_SensorGetDeviceName(device_index: c_int) -> Pointer[char]
+    def SDL_SensorGetDeviceType(device_index: c_int) -> SDL_SensorType
+    def SDL_SensorGetDeviceNonPortableType(device_index: c_int) -> c_int
+    def SDL_SensorGetDeviceInstanceID(device_index: c_int) -> SDL_SensorID
+    def SDL_SensorOpen(device_index: c_int) -> Pointer[SDL_Sensor]
+    def SDL_SensorFromInstanceID(instance_id: SDL_SensorID) -> Pointer[SDL_Sensor]
+    def SDL_SensorGetName(sensor: Pointer[SDL_Sensor]) -> Pointer[char]
+    def SDL_SensorGetType(sensor: Pointer[SDL_Sensor]) -> SDL_SensorType
+    def SDL_SensorGetNonPortableType(sensor: Pointer[SDL_Sensor]) -> c_int
+    def SDL_SensorGetInstanceID(sensor: Pointer[SDL_Sensor]) -> SDL_SensorID
+    def SDL_SensorGetData(sensor: Pointer[SDL_Sensor], data: Pointer[c_float], num_values: c_int) -> c_int
+    def SDL_SensorGetDataWithTimestamp(sensor: Pointer[SDL_Sensor], timestamp: Pointer[Uint64], data: Pointer[c_float], num_values: c_int) -> c_int
+    def SDL_SensorClose(sensor: Pointer[SDL_Sensor])
+    def SDL_SensorUpdate()
+    def SDL_GameControllerAddMappingsFromRW(rw: Pointer[SDL_RWops], freerw: c_int) -> c_int
+    def SDL_GameControllerAddMapping(mappingString: Pointer[char]) -> c_int
+    def SDL_GameControllerNumMappings() -> c_int
+    def SDL_GameControllerMappingForIndex(mapping_index: c_int) -> Pointer[char]
+    def SDL_GameControllerMappingForGUID(guid: SDL_JoystickGUID) -> Pointer[char]
+    def SDL_GameControllerMapping(gamecontroller: Pointer[SDL_GameController]) -> Pointer[char]
+    def SDL_IsGameController(joystick_index: c_int) -> SDL_bool
+    def SDL_GameControllerNameForIndex(joystick_index: c_int) -> Pointer[char]
+    def SDL_GameControllerPathForIndex(joystick_index: c_int) -> Pointer[char]
+    def SDL_GameControllerTypeForIndex(joystick_index: c_int) -> SDL_GameControllerType
+    def SDL_GameControllerMappingForDeviceIndex(joystick_index: c_int) -> Pointer[char]
+    def SDL_GameControllerOpen(joystick_index: c_int) -> Pointer[SDL_GameController]
+    def SDL_GameControllerFromInstanceID(joyid: SDL_JoystickID) -> Pointer[SDL_GameController]
+    def SDL_GameControllerFromPlayerIndex(player_index: c_int) -> Pointer[SDL_GameController]
+    def SDL_GameControllerName(gamecontroller: Pointer[SDL_GameController]) -> Pointer[char]
+    def SDL_GameControllerPath(gamecontroller: Pointer[SDL_GameController]) -> Pointer[char]
+    def SDL_GameControllerGetType(gamecontroller: Pointer[SDL_GameController]) -> SDL_GameControllerType
+    def SDL_GameControllerGetPlayerIndex(gamecontroller: Pointer[SDL_GameController]) -> c_int
+    def SDL_GameControllerSetPlayerIndex(gamecontroller: Pointer[SDL_GameController], player_index: c_int)
+    def SDL_GameControllerGetVendor(gamecontroller: Pointer[SDL_GameController]) -> Uint16
+    def SDL_GameControllerGetProduct(gamecontroller: Pointer[SDL_GameController]) -> Uint16
+    def SDL_GameControllerGetProductVersion(gamecontroller: Pointer[SDL_GameController]) -> Uint16
+    def SDL_GameControllerGetFirmwareVersion(gamecontroller: Pointer[SDL_GameController]) -> Uint16
+    def SDL_GameControllerGetSerial(gamecontroller: Pointer[SDL_GameController]) -> Pointer[char]
+    def SDL_GameControllerGetSteamHandle(gamecontroller: Pointer[SDL_GameController]) -> Uint64
+    def SDL_GameControllerGetAttached(gamecontroller: Pointer[SDL_GameController]) -> SDL_bool
+    def SDL_GameControllerGetJoystick(gamecontroller: Pointer[SDL_GameController]) -> Pointer[SDL_Joystick]
+    def SDL_GameControllerEventState(state: c_int) -> c_int
+    def SDL_GameControllerUpdate()
+    def SDL_GameControllerGetAxisFromString(str: Pointer[char]) -> SDL_GameControllerAxis
+    def SDL_GameControllerGetStringForAxis(axis: SDL_GameControllerAxis) -> Pointer[char]
+    def SDL_GameControllerGetBindForAxis(gamecontroller: Pointer[SDL_GameController], axis: SDL_GameControllerAxis) -> SDL_GameControllerButtonBind
+    def SDL_GameControllerHasAxis(gamecontroller: Pointer[SDL_GameController], axis: SDL_GameControllerAxis) -> SDL_bool
+    def SDL_GameControllerGetAxis(gamecontroller: Pointer[SDL_GameController], axis: SDL_GameControllerAxis) -> Sint16
+    def SDL_GameControllerGetButtonFromString(str: Pointer[char]) -> SDL_GameControllerButton
+    def SDL_GameControllerGetStringForButton(button: SDL_GameControllerButton) -> Pointer[char]
+    def SDL_GameControllerGetBindForButton(gamecontroller: Pointer[SDL_GameController], button: SDL_GameControllerButton) -> SDL_GameControllerButtonBind
+    def SDL_GameControllerHasButton(gamecontroller: Pointer[SDL_GameController], button: SDL_GameControllerButton) -> SDL_bool
+    def SDL_GameControllerGetButton(gamecontroller: Pointer[SDL_GameController], button: SDL_GameControllerButton) -> Uint8
+    def SDL_GameControllerGetNumTouchpads(gamecontroller: Pointer[SDL_GameController]) -> c_int
+    def SDL_GameControllerGetNumTouchpadFingers(gamecontroller: Pointer[SDL_GameController], touchpad: c_int) -> c_int
+    def SDL_GameControllerGetTouchpadFinger(gamecontroller: Pointer[SDL_GameController], touchpad: c_int, finger: c_int, state: Pointer[Uint8], x: Pointer[c_float], y: Pointer[c_float], pressure: Pointer[c_float]) -> c_int
+    def SDL_GameControllerHasSensor(gamecontroller: Pointer[SDL_GameController], type_: SDL_SensorType) -> SDL_bool
+    def SDL_GameControllerSetSensorEnabled(gamecontroller: Pointer[SDL_GameController], type_: SDL_SensorType, enabled: SDL_bool) -> c_int
+    def SDL_GameControllerIsSensorEnabled(gamecontroller: Pointer[SDL_GameController], type_: SDL_SensorType) -> SDL_bool
+    def SDL_GameControllerGetSensorDataRate(gamecontroller: Pointer[SDL_GameController], type_: SDL_SensorType) -> c_float
+    def SDL_GameControllerGetSensorData(gamecontroller: Pointer[SDL_GameController], type_: SDL_SensorType, data: Pointer[c_float], num_values: c_int) -> c_int
+    def SDL_GameControllerGetSensorDataWithTimestamp(gamecontroller: Pointer[SDL_GameController], type_: SDL_SensorType, timestamp: Pointer[Uint64], data: Pointer[c_float], num_values: c_int) -> c_int
+    def SDL_GameControllerRumble(gamecontroller: Pointer[SDL_GameController], low_frequency_rumble: Uint16, high_frequency_rumble: Uint16, duration_ms: Uint32) -> c_int
+    def SDL_GameControllerRumbleTriggers(gamecontroller: Pointer[SDL_GameController], left_rumble: Uint16, right_rumble: Uint16, duration_ms: Uint32) -> c_int
+    def SDL_GameControllerHasLED(gamecontroller: Pointer[SDL_GameController]) -> SDL_bool
+    def SDL_GameControllerHasRumble(gamecontroller: Pointer[SDL_GameController]) -> SDL_bool
+    def SDL_GameControllerHasRumbleTriggers(gamecontroller: Pointer[SDL_GameController]) -> SDL_bool
+    def SDL_GameControllerSetLED(gamecontroller: Pointer[SDL_GameController], red: Uint8, green: Uint8, blue: Uint8) -> c_int
+    def SDL_GameControllerSendEffect(gamecontroller: Pointer[SDL_GameController], data: Pointer[void], size: c_int) -> c_int
+    def SDL_GameControllerClose(gamecontroller: Pointer[SDL_GameController])
+    def SDL_GameControllerGetAppleSFSymbolsNameForButton(gamecontroller: Pointer[SDL_GameController], button: SDL_GameControllerButton) -> Pointer[char]
+    def SDL_GameControllerGetAppleSFSymbolsNameForAxis(gamecontroller: Pointer[SDL_GameController], axis: SDL_GameControllerAxis) -> Pointer[char]
+    def SDL_GetNumTouchDevices() -> c_int
+    def SDL_GetTouchDevice(index: c_int) -> SDL_TouchID
+    def SDL_GetTouchName(index: c_int) -> Pointer[char]
+    def SDL_GetTouchDeviceType(touchID: SDL_TouchID) -> SDL_TouchDeviceType
+    def SDL_GetNumTouchFingers(touchID: SDL_TouchID) -> c_int
+    def SDL_GetTouchFinger(touchID: SDL_TouchID, index: c_int) -> Pointer[SDL_Finger]
+    def SDL_RecordGesture(touchId: SDL_TouchID) -> c_int
+    def SDL_SaveAllDollarTemplates(dst: Pointer[SDL_RWops]) -> c_int
+    def SDL_SaveDollarTemplate(gestureId: SDL_GestureID, dst: Pointer[SDL_RWops]) -> c_int
+    def SDL_LoadDollarTemplates(touchId: SDL_TouchID, src: Pointer[SDL_RWops]) -> c_int
+    def SDL_PumpEvents()
+    def SDL_PeepEvents(events: Pointer[SDL_Event], numevents: c_int, action: SDL_eventaction, minType: Uint32, maxType: Uint32) -> c_int
+    def SDL_HasEvent(type_: Uint32) -> SDL_bool
+    def SDL_HasEvents(minType: Uint32, maxType: Uint32) -> SDL_bool
+    def SDL_FlushEvent(type_: Uint32)
+    def SDL_FlushEvents(minType: Uint32, maxType: Uint32)
+    def SDL_PollEvent(event: Pointer[SDL_Event]) -> c_int
+    def SDL_WaitEvent(event: Pointer[SDL_Event]) -> c_int
+    def SDL_WaitEventTimeout(event: Pointer[SDL_Event], timeout: c_int) -> c_int
+    def SDL_PushEvent(event: Pointer[SDL_Event]) -> c_int
+    def SDL_SetEventFilter(filter: SDL_EventFilter, userdata: Pointer[void])
+    def SDL_GetEventFilter(filter: Pointer[SDL_EventFilter], userdata: Pointer[Pointer[void]]) -> SDL_bool
+    def SDL_AddEventWatch(filter: SDL_EventFilter, userdata: Pointer[void])
+    def SDL_DelEventWatch(filter: SDL_EventFilter, userdata: Pointer[void])
+    def SDL_FilterEvents(filter: SDL_EventFilter, userdata: Pointer[void])
+    def SDL_EventState(type_: Uint32, state: c_int) -> Uint8
+    def SDL_RegisterEvents(numevents: c_int) -> Uint32
+    def SDL_GetBasePath() -> Pointer[char]
+    def SDL_GetPrefPath(org: Pointer[char], app: Pointer[char]) -> Pointer[char]
+    def SDL_NumHaptics() -> c_int
+    def SDL_HapticName(device_index: c_int) -> Pointer[char]
+    def SDL_HapticOpen(device_index: c_int) -> Pointer[SDL_Haptic]
+    def SDL_HapticOpened(device_index: c_int) -> c_int
+    def SDL_HapticIndex(haptic: Pointer[SDL_Haptic]) -> c_int
+    def SDL_MouseIsHaptic() -> c_int
+    def SDL_HapticOpenFromMouse() -> Pointer[SDL_Haptic]
+    def SDL_JoystickIsHaptic(joystick: Pointer[SDL_Joystick]) -> c_int
+    def SDL_HapticOpenFromJoystick(joystick: Pointer[SDL_Joystick]) -> Pointer[SDL_Haptic]
+    def SDL_HapticClose(haptic: Pointer[SDL_Haptic])
+    def SDL_HapticNumEffects(haptic: Pointer[SDL_Haptic]) -> c_int
+    def SDL_HapticNumEffectsPlaying(haptic: Pointer[SDL_Haptic]) -> c_int
+    def SDL_HapticQuery(haptic: Pointer[SDL_Haptic]) -> c_uint
+    def SDL_HapticNumAxes(haptic: Pointer[SDL_Haptic]) -> c_int
+    def SDL_HapticEffectSupported(haptic: Pointer[SDL_Haptic], effect: Pointer[SDL_HapticEffect]) -> c_int
+    def SDL_HapticNewEffect(haptic: Pointer[SDL_Haptic], effect: Pointer[SDL_HapticEffect]) -> c_int
+    def SDL_HapticUpdateEffect(haptic: Pointer[SDL_Haptic], effect: c_int, data: Pointer[SDL_HapticEffect]) -> c_int
+    def SDL_HapticRunEffect(haptic: Pointer[SDL_Haptic], effect: c_int, iterations: Uint32) -> c_int
+    def SDL_HapticStopEffect(haptic: Pointer[SDL_Haptic], effect: c_int) -> c_int
+    def SDL_HapticDestroyEffect(haptic: Pointer[SDL_Haptic], effect: c_int)
+    def SDL_HapticGetEffectStatus(haptic: Pointer[SDL_Haptic], effect: c_int) -> c_int
+    def SDL_HapticSetGain(haptic: Pointer[SDL_Haptic], gain: c_int) -> c_int
+    def SDL_HapticSetAutocenter(haptic: Pointer[SDL_Haptic], autocenter: c_int) -> c_int
+    def SDL_HapticPause(haptic: Pointer[SDL_Haptic]) -> c_int
+    def SDL_HapticUnpause(haptic: Pointer[SDL_Haptic]) -> c_int
+    def SDL_HapticStopAll(haptic: Pointer[SDL_Haptic]) -> c_int
+    def SDL_HapticRumbleSupported(haptic: Pointer[SDL_Haptic]) -> c_int
+    def SDL_HapticRumbleInit(haptic: Pointer[SDL_Haptic]) -> c_int
+    def SDL_HapticRumblePlay(haptic: Pointer[SDL_Haptic], strength: c_float, length: Uint32) -> c_int
+    def SDL_HapticRumbleStop(haptic: Pointer[SDL_Haptic]) -> c_int
+    def SDL_hid_init() -> c_int
+    def SDL_hid_exit() -> c_int
+    def SDL_hid_device_change_count() -> Uint32
+    def SDL_hid_enumerate(vendor_id: c_ushort, product_id: c_ushort) -> Pointer[SDL_hid_device_info]
+    def SDL_hid_free_enumeration(devs: Pointer[SDL_hid_device_info])
+    def SDL_hid_open(vendor_id: c_ushort, product_id: c_ushort, serial_number: Pointer[wchar_t]) -> Pointer[SDL_hid_device]
+    def SDL_hid_open_path(path: Pointer[char], bExclusive: c_int) -> Pointer[SDL_hid_device]
+    def SDL_hid_write(dev: Pointer[SDL_hid_device], data: Pointer[c_uchar], length: c_size_t) -> c_int
+    def SDL_hid_read_timeout(dev: Pointer[SDL_hid_device], data: Pointer[c_uchar], length: c_size_t, milliseconds: c_int) -> c_int
+    def SDL_hid_read(dev: Pointer[SDL_hid_device], data: Pointer[c_uchar], length: c_size_t) -> c_int
+    def SDL_hid_set_nonblocking(dev: Pointer[SDL_hid_device], nonblock: c_int) -> c_int
+    def SDL_hid_send_feature_report(dev: Pointer[SDL_hid_device], data: Pointer[c_uchar], length: c_size_t) -> c_int
+    def SDL_hid_get_feature_report(dev: Pointer[SDL_hid_device], data: Pointer[c_uchar], length: c_size_t) -> c_int
+    def SDL_hid_close(dev: Pointer[SDL_hid_device])
+    def SDL_hid_get_manufacturer_string(dev: Pointer[SDL_hid_device], string: Pointer[wchar_t], maxlen: c_size_t) -> c_int
+    def SDL_hid_get_product_string(dev: Pointer[SDL_hid_device], string: Pointer[wchar_t], maxlen: c_size_t) -> c_int
+    def SDL_hid_get_serial_number_string(dev: Pointer[SDL_hid_device], string: Pointer[wchar_t], maxlen: c_size_t) -> c_int
+    def SDL_hid_get_indexed_string(dev: Pointer[SDL_hid_device], string_index: c_int, string: Pointer[wchar_t], maxlen: c_size_t) -> c_int
+    def SDL_hid_ble_scan(active: SDL_bool)
+    def SDL_SetHintWithPriority(name: Pointer[char], value: Pointer[char], priority: SDL_HintPriority) -> SDL_bool
+    def SDL_SetHint(name: Pointer[char], value: Pointer[char]) -> SDL_bool
+    def SDL_ResetHint(name: Pointer[char]) -> SDL_bool
+    def SDL_ResetHints()
+    def SDL_GetHint(name: Pointer[char]) -> Pointer[char]
+    def SDL_GetHintBoolean(name: Pointer[char], default_value: SDL_bool) -> SDL_bool
+    def SDL_AddHintCallback(name: Pointer[char], callback: SDL_HintCallback, userdata: Pointer[void])
+    def SDL_DelHintCallback(name: Pointer[char], callback: SDL_HintCallback, userdata: Pointer[void])
+    def SDL_ClearHints()
+    def SDL_LoadObject(sofile: Pointer[char]) -> Pointer[void]
+    def SDL_LoadFunction(handle: Pointer[void], name: Pointer[char]) -> Pointer[void]
+    def SDL_UnloadObject(handle: Pointer[void])
+    def SDL_LogSetAllPriority(priority: SDL_LogPriority)
+    def SDL_LogSetPriority(category: c_int, priority: SDL_LogPriority)
+    def SDL_LogGetPriority(category: c_int) -> SDL_LogPriority
+    def SDL_LogResetPriorities()
+    def SDL_Log(fmt: Pointer[char], args...)
+    def SDL_LogVerbose(category: c_int, fmt: Pointer[char], args...)
+    def SDL_LogDebug(category: c_int, fmt: Pointer[char], args...)
+    def SDL_LogInfo(category: c_int, fmt: Pointer[char], args...)
+    def SDL_LogWarn(category: c_int, fmt: Pointer[char], args...)
+    def SDL_LogError(category: c_int, fmt: Pointer[char], args...)
+    def SDL_LogCritical(category: c_int, fmt: Pointer[char], args...)
+    def SDL_LogMessage(category: c_int, priority: SDL_LogPriority, fmt: Pointer[char], args...)
+    def SDL_LogMessageV(category: c_int, priority: SDL_LogPriority, fmt: Pointer[char], ap: Pointer[void])
+    def SDL_LogGetOutputFunction(callback: Pointer[SDL_LogOutputFunction], userdata: Pointer[Pointer[void]])
+    def SDL_LogSetOutputFunction(callback: SDL_LogOutputFunction, userdata: Pointer[void])
+    def SDL_ShowMessageBox(messageboxdata: Pointer[SDL_MessageBoxData], buttonid: Pointer[c_int]) -> c_int
+    def SDL_ShowSimpleMessageBox(flags: Uint32, title: Pointer[char], message: Pointer[char], window: Pointer[SDL_Window]) -> c_int
+    def SDL_Metal_CreateView(window: Pointer[SDL_Window]) -> SDL_MetalView
+    def SDL_Metal_DestroyView(view: SDL_MetalView)
+    def SDL_Metal_GetLayer(view: SDL_MetalView) -> Pointer[void]
+    def SDL_Metal_GetDrawableSize(window: Pointer[SDL_Window], w: Pointer[c_int], h: Pointer[c_int])
+    def SDL_GetPowerInfo(seconds: Pointer[c_int], percent: Pointer[c_int]) -> SDL_PowerState
+    def SDL_GetNumRenderDrivers() -> c_int
+    def SDL_GetRenderDriverInfo(index: c_int, info: Pointer[SDL_RendererInfo]) -> c_int
+    def SDL_CreateWindowAndRenderer(width: c_int, height: c_int, window_flags: Uint32, window: Pointer[Pointer[SDL_Window]], renderer: Pointer[Pointer[SDL_Renderer]]) -> c_int
+    def SDL_CreateRenderer(window: Pointer[SDL_Window], index: c_int, flags: Uint32) -> Pointer[SDL_Renderer]
+    def SDL_CreateSoftwareRenderer(surface: Pointer[SDL_Surface]) -> Pointer[SDL_Renderer]
+    def SDL_GetRenderer(window: Pointer[SDL_Window]) -> Pointer[SDL_Renderer]
+    def SDL_RenderGetWindow(renderer: Pointer[SDL_Renderer]) -> Pointer[SDL_Window]
+    def SDL_GetRendererInfo(renderer: Pointer[SDL_Renderer], info: Pointer[SDL_RendererInfo]) -> c_int
+    def SDL_GetRendererOutputSize(renderer: Pointer[SDL_Renderer], w: Pointer[c_int], h: Pointer[c_int]) -> c_int
+    def SDL_CreateTexture(renderer: Pointer[SDL_Renderer], format: Uint32, access: c_int, w: c_int, h: c_int) -> Pointer[SDL_Texture]
+    def SDL_CreateTextureFromSurface(renderer: Pointer[SDL_Renderer], surface: Pointer[SDL_Surface]) -> Pointer[SDL_Texture]
+    def SDL_QueryTexture(texture: Pointer[SDL_Texture], format: Pointer[Uint32], access: Pointer[c_int], w: Pointer[c_int], h: Pointer[c_int]) -> c_int
+    def SDL_SetTextureColorMod(texture: Pointer[SDL_Texture], r: Uint8, g: Uint8, b: Uint8) -> c_int
+    def SDL_GetTextureColorMod(texture: Pointer[SDL_Texture], r: Pointer[Uint8], g: Pointer[Uint8], b: Pointer[Uint8]) -> c_int
+    def SDL_SetTextureAlphaMod(texture: Pointer[SDL_Texture], alpha: Uint8) -> c_int
+    def SDL_GetTextureAlphaMod(texture: Pointer[SDL_Texture], alpha: Pointer[Uint8]) -> c_int
+    def SDL_SetTextureBlendMode(texture: Pointer[SDL_Texture], blendMode: SDL_BlendMode) -> c_int
+    def SDL_GetTextureBlendMode(texture: Pointer[SDL_Texture], blendMode: Pointer[SDL_BlendMode]) -> c_int
+    def SDL_SetTextureScaleMode(texture: Pointer[SDL_Texture], scaleMode: SDL_ScaleMode) -> c_int
+    def SDL_GetTextureScaleMode(texture: Pointer[SDL_Texture], scaleMode: Pointer[SDL_ScaleMode]) -> c_int
+    def SDL_SetTextureUserData(texture: Pointer[SDL_Texture], userdata: Pointer[void]) -> c_int
+    def SDL_GetTextureUserData(texture: Pointer[SDL_Texture]) -> Pointer[void]
+    def SDL_UpdateTexture(texture: Pointer[SDL_Texture], rect: Pointer[SDL_Rect], pixels: Pointer[void], pitch: c_int) -> c_int
+    def SDL_UpdateYUVTexture(texture: Pointer[SDL_Texture], rect: Pointer[SDL_Rect], Yplane: Pointer[Uint8], Ypitch: c_int, Uplane: Pointer[Uint8], Upitch: c_int, Vplane: Pointer[Uint8], Vpitch: c_int) -> c_int
+    def SDL_UpdateNVTexture(texture: Pointer[SDL_Texture], rect: Pointer[SDL_Rect], Yplane: Pointer[Uint8], Ypitch: c_int, UVplane: Pointer[Uint8], UVpitch: c_int) -> c_int
+    def SDL_LockTexture(texture: Pointer[SDL_Texture], rect: Pointer[SDL_Rect], pixels: Pointer[Pointer[void]], pitch: Pointer[c_int]) -> c_int
+    def SDL_LockTextureToSurface(texture: Pointer[SDL_Texture], rect: Pointer[SDL_Rect], surface: Pointer[Pointer[SDL_Surface]]) -> c_int
+    def SDL_UnlockTexture(texture: Pointer[SDL_Texture])
+    def SDL_RenderTargetSupported(renderer: Pointer[SDL_Renderer]) -> SDL_bool
+    def SDL_SetRenderTarget(renderer: Pointer[SDL_Renderer], texture: Pointer[SDL_Texture]) -> c_int
+    def SDL_GetRenderTarget(renderer: Pointer[SDL_Renderer]) -> Pointer[SDL_Texture]
+    def SDL_RenderSetLogicalSize(renderer: Pointer[SDL_Renderer], w: c_int, h: c_int) -> c_int
+    def SDL_RenderGetLogicalSize(renderer: Pointer[SDL_Renderer], w: Pointer[c_int], h: Pointer[c_int])
+    def SDL_RenderSetIntegerScale(renderer: Pointer[SDL_Renderer], enable: SDL_bool) -> c_int
+    def SDL_RenderGetIntegerScale(renderer: Pointer[SDL_Renderer]) -> SDL_bool
+    def SDL_RenderSetViewport(renderer: Pointer[SDL_Renderer], rect: Pointer[SDL_Rect]) -> c_int
+    def SDL_RenderGetViewport(renderer: Pointer[SDL_Renderer], rect: Pointer[SDL_Rect])
+    def SDL_RenderSetClipRect(renderer: Pointer[SDL_Renderer], rect: Pointer[SDL_Rect]) -> c_int
+    def SDL_RenderGetClipRect(renderer: Pointer[SDL_Renderer], rect: Pointer[SDL_Rect])
+    def SDL_RenderIsClipEnabled(renderer: Pointer[SDL_Renderer]) -> SDL_bool
+    def SDL_RenderSetScale(renderer: Pointer[SDL_Renderer], scaleX: c_float, scaleY: c_float) -> c_int
+    def SDL_RenderGetScale(renderer: Pointer[SDL_Renderer], scaleX: Pointer[c_float], scaleY: Pointer[c_float])
+    def SDL_RenderWindowToLogical(renderer: Pointer[SDL_Renderer], windowX: c_int, windowY: c_int, logicalX: Pointer[c_float], logicalY: Pointer[c_float])
+    def SDL_RenderLogicalToWindow(renderer: Pointer[SDL_Renderer], logicalX: c_float, logicalY: c_float, windowX: Pointer[c_int], windowY: Pointer[c_int])
+    def SDL_SetRenderDrawColor(renderer: Pointer[SDL_Renderer], r: Uint8, g: Uint8, b: Uint8, a: Uint8) -> c_int
+    def SDL_GetRenderDrawColor(renderer: Pointer[SDL_Renderer], r: Pointer[Uint8], g: Pointer[Uint8], b: Pointer[Uint8], a: Pointer[Uint8]) -> c_int
+    def SDL_SetRenderDrawBlendMode(renderer: Pointer[SDL_Renderer], blendMode: SDL_BlendMode) -> c_int
+    def SDL_GetRenderDrawBlendMode(renderer: Pointer[SDL_Renderer], blendMode: Pointer[SDL_BlendMode]) -> c_int
+    def SDL_RenderClear(renderer: Pointer[SDL_Renderer]) -> c_int
+    def SDL_RenderDrawPoint(renderer: Pointer[SDL_Renderer], x: c_int, y: c_int) -> c_int
+    def SDL_RenderDrawPoints(renderer: Pointer[SDL_Renderer], points: Pointer[SDL_Point], count: c_int) -> c_int
+    def SDL_RenderDrawLine(renderer: Pointer[SDL_Renderer], x1: c_int, y1: c_int, x2: c_int, y2: c_int) -> c_int
+    def SDL_RenderDrawLines(renderer: Pointer[SDL_Renderer], points: Pointer[SDL_Point], count: c_int) -> c_int
+    def SDL_RenderDrawRect(renderer: Pointer[SDL_Renderer], rect: Pointer[SDL_Rect]) -> c_int
+    def SDL_RenderDrawRects(renderer: Pointer[SDL_Renderer], rects: Pointer[SDL_Rect], count: c_int) -> c_int
+    def SDL_RenderFillRect(renderer: Pointer[SDL_Renderer], rect: Pointer[SDL_Rect]) -> c_int
+    def SDL_RenderFillRects(renderer: Pointer[SDL_Renderer], rects: Pointer[SDL_Rect], count: c_int) -> c_int
+    def SDL_RenderCopy(renderer: Pointer[SDL_Renderer], texture: Pointer[SDL_Texture], srcrect: Pointer[SDL_Rect], dstrect: Pointer[SDL_Rect]) -> c_int
+    def SDL_RenderCopyEx(renderer: Pointer[SDL_Renderer], texture: Pointer[SDL_Texture], srcrect: Pointer[SDL_Rect], dstrect: Pointer[SDL_Rect], angle: c_double, center: Pointer[SDL_Point], flip: SDL_RendererFlip) -> c_int
+    def SDL_RenderDrawPointF(renderer: Pointer[SDL_Renderer], x: c_float, y: c_float) -> c_int
+    def SDL_RenderDrawPointsF(renderer: Pointer[SDL_Renderer], points: Pointer[SDL_FPoint], count: c_int) -> c_int
+    def SDL_RenderDrawLineF(renderer: Pointer[SDL_Renderer], x1: c_float, y1: c_float, x2: c_float, y2: c_float) -> c_int
+    def SDL_RenderDrawLinesF(renderer: Pointer[SDL_Renderer], points: Pointer[SDL_FPoint], count: c_int) -> c_int
+    def SDL_RenderDrawRectF(renderer: Pointer[SDL_Renderer], rect: Pointer[SDL_FRect]) -> c_int
+    def SDL_RenderDrawRectsF(renderer: Pointer[SDL_Renderer], rects: Pointer[SDL_FRect], count: c_int) -> c_int
+    def SDL_RenderFillRectF(renderer: Pointer[SDL_Renderer], rect: Pointer[SDL_FRect]) -> c_int
+    def SDL_RenderFillRectsF(renderer: Pointer[SDL_Renderer], rects: Pointer[SDL_FRect], count: c_int) -> c_int
+    def SDL_RenderCopyF(renderer: Pointer[SDL_Renderer], texture: Pointer[SDL_Texture], srcrect: Pointer[SDL_Rect], dstrect: Pointer[SDL_FRect]) -> c_int
+    def SDL_RenderCopyExF(renderer: Pointer[SDL_Renderer], texture: Pointer[SDL_Texture], srcrect: Pointer[SDL_Rect], dstrect: Pointer[SDL_FRect], angle: c_double, center: Pointer[SDL_FPoint], flip: SDL_RendererFlip) -> c_int
+    def SDL_RenderGeometry(renderer: Pointer[SDL_Renderer], texture: Pointer[SDL_Texture], vertices: Pointer[SDL_Vertex], num_vertices: c_int, indices: Pointer[c_int], num_indices: c_int) -> c_int
+    def SDL_RenderGeometryRaw(renderer: Pointer[SDL_Renderer], texture: Pointer[SDL_Texture], xy: Pointer[c_float], xy_stride: c_int, color: Pointer[SDL_Color], color_stride: c_int, uv: Pointer[c_float], uv_stride: c_int, num_vertices: c_int, indices: Pointer[void], num_indices: c_int, size_indices: c_int) -> c_int
+    def SDL_RenderReadPixels(renderer: Pointer[SDL_Renderer], rect: Pointer[SDL_Rect], format: Uint32, pixels: Pointer[void], pitch: c_int) -> c_int
+    def SDL_RenderPresent(renderer: Pointer[SDL_Renderer])
+    def SDL_DestroyTexture(texture: Pointer[SDL_Texture])
+    def SDL_DestroyRenderer(renderer: Pointer[SDL_Renderer])
+    def SDL_RenderFlush(renderer: Pointer[SDL_Renderer]) -> c_int
+    def SDL_GL_BindTexture(texture: Pointer[SDL_Texture], texw: Pointer[c_float], texh: Pointer[c_float]) -> c_int
+    def SDL_GL_UnbindTexture(texture: Pointer[SDL_Texture]) -> c_int
+    def SDL_RenderGetMetalLayer(renderer: Pointer[SDL_Renderer]) -> Pointer[void]
+    def SDL_RenderGetMetalCommandEncoder(renderer: Pointer[SDL_Renderer]) -> Pointer[void]
+    def SDL_RenderSetVSync(renderer: Pointer[SDL_Renderer], vsync: c_int) -> c_int
+    def SDL_CreateShapedWindow(title: Pointer[char], x: c_uint, y: c_uint, w: c_uint, h: c_uint, flags: Uint32) -> Pointer[SDL_Window]
+    def SDL_IsShapedWindow(window: Pointer[SDL_Window]) -> SDL_bool
+    def SDL_SetWindowShape(window: Pointer[SDL_Window], shape: Pointer[SDL_Surface], shape_mode: Pointer[SDL_WindowShapeMode]) -> c_int
+    def SDL_GetShapedWindowMode(window: Pointer[SDL_Window], shape_mode: Pointer[SDL_WindowShapeMode]) -> c_int
+    def SDL_SetWindowsMessageHook(callback: SDL_WindowsMessageHook, userdata: Pointer[void])
+    def SDL_Direct3D9GetAdapterIndex(displayIndex: c_int) -> c_int
+    def SDL_RenderGetD3D9Device(renderer: Pointer[SDL_Renderer]) -> Pointer[IDirect3DDevice9]
+    def SDL_RenderGetD3D11Device(renderer: Pointer[SDL_Renderer]) -> Pointer[ID3D11Device]
+    def SDL_RenderGetD3D12Device(renderer: Pointer[SDL_Renderer]) -> Pointer[ID3D12Device]
+    def SDL_DXGIGetOutputInfo(displayIndex: c_int, adapterIndex: Pointer[c_int], outputIndex: Pointer[c_int]) -> SDL_bool
+    def SDL_IsTablet() -> SDL_bool
+    def SDL_OnApplicationWillTerminate()
+    def SDL_OnApplicationDidReceiveMemoryWarning()
+    def SDL_OnApplicationWillResignActive()
+    def SDL_OnApplicationDidEnterBackground()
+    def SDL_OnApplicationWillEnterForeground()
+    def SDL_OnApplicationDidBecomeActive()
+    def SDL_GetTicks() -> Uint32
+    def SDL_GetTicks64() -> Uint64
+    def SDL_GetPerformanceCounter() -> Uint64
+    def SDL_GetPerformanceFrequency() -> Uint64
+    def SDL_Delay(ms: Uint32)
+    def SDL_AddTimer(interval: Uint32, callback: SDL_TimerCallback, param: Pointer[void]) -> SDL_TimerID
+    def SDL_RemoveTimer(id: SDL_TimerID) -> SDL_bool
+    def SDL_GetVersion(ver: Pointer[SDL_version])
+    def SDL_GetRevision() -> Pointer[char]
+    def SDL_GetRevisionNumber() -> c_int
+    def SDL_GetPreferredLocales() -> Pointer[SDL_Locale]
+    def SDL_OpenURL(url: Pointer[char]) -> c_int
+    def SDL_Init(flags: Uint32) -> c_int
+    def SDL_InitSubSystem(flags: Uint32) -> c_int
+    def SDL_QuitSubSystem(flags: Uint32)
+    def SDL_WasInit(flags: Uint32) -> Uint32
+    def SDL_Quit()

@@ -20,8 +20,24 @@ a confusing error — several of the entries there cost hours the first time.
 **Use the installed Windows SDK. It is on PATH and it works.**
 
 ```
-C:\Users\HomePC\.taupkg\bin\tauraroc-windows-x64\tauraroc.exe   # tauraroc v0.0.8
+%USERPROFILE%\.taupkg\bin\tauraroc-windows-x64\tauraroc.exe
 ```
+
+(`C:\Users\HomePC\...` in earlier notes below was a DIFFERENT machine's path — never
+hardcode it; `scripts/build-bare.ps1`/`build-uefi.ps1` now resolve it via `$env:USERPROFILE`.)
+
+**Updated 2026-09-04: this SDK copy has been refreshed with a dev build carrying fixes for
+several bugs this file documents below** (register-keyword interface-upcast loss, method-call
+auto-upcast, `[F-3]` exhaustive-match false positive, the `_WIN32`/`TAURARO_KERNEL` runtime-header
+gap, and — the big one — **calling a first-class function value under `--freestanding` no longer
+hangs/crashes** (tau_bugs.txt #1's root cause: the closure-vs-plain-function dispatch tagged
+pointer bit 0, which collides with ARM Thumb's own use of that bit; fixed by switching to a
+`{fn,env}` struct with no pointer-bit dependency, verified on real Cortex-M3/Thumb under qemu).
+This means `EventHandler`/`register_handler`/`render_to()` are no longer STRICTLY necessary
+workarounds — they still work fine and don't need to be reverted, but `Dict[str, def(Event) ->
+void]` (the proposal's original 5.5 design) should now also work bare-metal if you want to try it.
+Treat every "hangs on --freestanding" / "register is a C keyword" / "-U_WIN32 workaround" note
+below as **possibly stale** — spot-check against this compiler before assuming it still applies.
 
 It ships `zig/` (so no system gcc/clang is needed), `std/`, `runtime/`, plus `src/` (the
 self-hosted compiler in Tauraro) and `examples/` — both are the best available source of
@@ -393,6 +409,27 @@ already **is** the boot glue. The split:
   both; no separate object-file or linker step needed).
 - `scripts/run-uefi.ps1` — boots it under QEMU + OVMF, with the `-serial file:`-style robustness
   already learned from the Cortex-M runner script.
+
+**Updated 2026-09-04**: the hand-written `boot.zig` + `scripts/build-uefi.ps1`'s manual `zig
+build-exe` step are no longer strictly necessary. `tauraroc` now has a turnkey UEFI target:
+
+```
+tauraroc examples\uefi_demo\render.tr --target uefi-x64 --freestanding -o app
+```
+
+produces `app.efi` directly (verified: real MZ/PE header, and boots under `qemu-system-x86_64 -M
+q35` with split-pflash OVMF far enough to survive past firmware handoff into the app's own `hlt`
+loop — not re-verified with an actual screenshot compare in the session that added this, so treat
+"renders correctly" as carried over from the `boot.zig` baseline above, not re-proven). Same
+`_WIN32`/`_WIN64`/`_MSC_VER` undef and same well-known-named-export contract
+(`tauraro_heap_init(base, size)` + `tauraro_uefi_main`/`tauraro_ui_render(fb, width, height,
+pitch)`) — `render.tr` needed zero changes, it already used `tauraro_ui_render`. The compiler
+auto-generates an equivalent, protocol-agnostic zig glue stub internally (not written to disk for
+inspection) and drives `zig build-exe -target x86_64-uefi` itself; still depends on `zig` (bundled
+in the SDK) as the linker, same as every other Tauraro cross target — the "no hand-written stub"
+part is what's new, not "no zig at all". `boot.zig`/`build-uefi.ps1` still work unchanged and
+remain the reference for anything beyond the two-export convention (e.g. reading input devices,
+multiple windows, custom heap sizing).
 
 ### Two new bugs found getting here (full detail in `tau_bugs.txt` #12)
 

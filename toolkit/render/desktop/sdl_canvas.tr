@@ -1,0 +1,192 @@
+# toolkit.render.desktop.sdl_canvas — the real cross-platform GUI Canvas backend.
+#
+# This is the piece the hosted (PPM-dump) and bare-metal/UEFI (MMIO/GOP-framebuffer)
+# tiers don't have: an actual OS window with live mouse input, using SDL2 as a thin
+# wrapper -- exactly the "use an existing graphics tool as a wrapper, but write
+# everything else in Tauraro" approach. Every method here is a handful of lines
+# forwarding straight to SDL; the parser, style cache, layout engine, interpreter,
+# and widgets are the SAME toolkit source the other two tiers run, completely
+# unaware this backend exists.
+#
+# Bindings: toolkit/render/desktop/sdl_bindings.tr, generated with
+#   tauraroc bindgen <mingw64>/include/SDL2/SDL.h --cc clang \
+#       -I<mingw64>/include -I<mingw64>/include/SDL2
+# (bindgen needs `--cc clang`, not the default, to resolve libclang's own
+# builtin-include search path on this toolchain -- without it, parsing silently
+# produces 0 types/0 functions instead of an error.)
+#
+# Earlier versions of this file worked around three real bindgen bugs (a
+# shim header skipping SDL_events.h's gamecontroller/joystick transitive
+# includes to dodge a struct-corruption bug, a hand-written
+# SDL_MouseButtonEvent, and a hand-written `@union` SdlEventU standing in for
+# a mis-emitted-as-struct SDL_Event). All three were root-caused and FIXED in
+# tauraro's bindgen (src/bindgen.tr, 2026-09-04):
+#   1. A GCC/clang attribute between a struct/union body and its typedef name
+#      (`} __attribute__((packed)) Name;` -- exactly how SDL_AudioCVT is
+#      declared) was read as if `__attribute__` were the type's own name.
+#   2. A 2nd-level-nested anonymous struct/union field (SDL_GameController-
+#      ButtonBind's `union {...; struct {...} hat;} value;` is the real case
+#      that found this) desynced brace-depth tracking for the REST OF THE
+#      FILE -- every subsequent top-level function/struct was misparsed as
+#      more fields of whatever struct was open when the desync happened.
+# `SDL_Event` now correctly binds as `@union`, `SDL_AudioCVT` keeps its real
+# name, and no function is silently swallowed as a field -- so this file now
+# uses the real, direct SDL.h bindings with no workarounds.
+
+from toolkit.render.canvas import Canvas
+from toolkit.types import Event, red_of, green_of, blue_of
+from toolkit.render.desktop.sdl_bindings import SDL_Window, SDL_Renderer, SDL_Rect, SDL_Event
+from toolkit.render.desktop.sdl_bindings import SDL_Init, SDL_Quit, SDL_CreateWindow, SDL_CreateRenderer
+from toolkit.render.desktop.sdl_bindings import SDL_DestroyRenderer, SDL_DestroyWindow, SDL_PollEvent
+from toolkit.render.desktop.sdl_bindings import SDL_SetRenderDrawColor, SDL_RenderFillRect, SDL_RenderDrawPoint
+from toolkit.render.desktop.sdl_bindings import SDL_RenderPresent, SDL_RenderClear, SDL_Delay, SDL_GetError
+
+# Stable, version-independent SDL2 ABI constants that bindgen's macro pass
+# didn't pick up (defined via bit-shift/indirection macros, not plain literals).
+# Unchanged since SDL2's first release -- safe to hardcode.
+pub def sdl_init_video() -> Uint32:
+    return 0x00000020 as Uint32
+
+pub def sdl_windowpos_undefined() -> c_int:
+    return 0x1FFF0000
+
+pub def sdl_window_shown() -> Uint32:
+    return 4 as Uint32
+
+pub def sdl_renderer_accelerated() -> Uint32:
+    return 2 as Uint32
+
+pub def sdl_quit_event() -> Uint32:
+    return 256 as Uint32
+
+pub def sdl_mousebuttondown() -> Uint32:
+    return 1025 as Uint32
+
+pub class SdlCanvas implements Canvas:
+    pub win: Pointer[SDL_Window]
+    pub ren: Pointer[SDL_Renderer]
+    pub w:   int
+    pub h:   int
+
+extend SdlCanvas:
+    # Opens a real window. Returns a canvas with `win` NULL on failure (SDL_Init
+    # or window/renderer creation failed) -- callers should check `.ok()` before
+    # using it; nothing here crashes on a null handle, but nothing draws either.
+    pub def open(title: str, w: int, h: int) -> SdlCanvas:
+        mut c = SdlCanvas()
+        c.w = w
+        c.h = h
+        unsafe:
+            mut rc = SDL_Init(sdl_init_video())
+            if rc != 0:
+                c.win = 0 as Pointer[SDL_Window]
+                c.ren = 0 as Pointer[SDL_Renderer]
+                return c
+
+            mut cw = w as c_int
+            mut ch = h as c_int
+            c.win = SDL_CreateWindow(title as Pointer[char], sdl_windowpos_undefined(), sdl_windowpos_undefined(), cw, ch, sdl_window_shown())
+            if (c.win as usize) == (0 as usize):
+                c.ren = 0 as Pointer[SDL_Renderer]
+                return c
+
+            c.ren = SDL_CreateRenderer(c.win, 0 - 1, sdl_renderer_accelerated())
+        return c
+
+    pub def ok(self) -> bool:
+        unsafe:
+            return (self.win as usize) != (0 as usize) and (self.ren as usize) != (0 as usize)
+
+    pub def width(self) -> int:
+        return self.w
+
+    pub def height(self) -> int:
+        return self.h
+
+    # Clears the whole window to `color` -- call once per frame before repainting
+    # the tree, since (unlike the PPM/framebuffer backends) SDL does not start
+    # each frame pre-filled with anything in particular.
+    pub def clear(self, color: int) -> void:
+        unsafe:
+            SDL_SetRenderDrawColor(self.ren, red_of(color) as Uint8, green_of(color) as Uint8, blue_of(color) as Uint8, 255 as Uint8)
+            SDL_RenderClear(self.ren)
+
+    pub def fill_rect(self, x: int, y: int, w: int, h: int, color: int) -> void:
+        if w <= 0:
+            return
+        if h <= 0:
+            return
+        unsafe:
+            SDL_SetRenderDrawColor(self.ren, red_of(color) as Uint8, green_of(color) as Uint8, blue_of(color) as Uint8, 255 as Uint8)
+            mut r = SDL_Rect()
+            r.x = x as c_int
+            r.y = y as c_int
+            r.w = w as c_int
+            r.h = h as c_int
+            SDL_RenderFillRect(self.ren, alloc_rect(r))
+
+    pub def set_pixel(self, x: int, y: int, color: int) -> void:
+        unsafe:
+            SDL_SetRenderDrawColor(self.ren, red_of(color) as Uint8, green_of(color) as Uint8, blue_of(color) as Uint8, 255 as Uint8)
+            SDL_RenderDrawPoint(self.ren, x as c_int, y as c_int)
+
+    # Flips the back buffer to the screen -- call once per frame, after every
+    # fill_rect/set_pixel for that frame, never per-primitive (that would tear
+    # and be needlessly slow).
+    pub def present(self) -> void:
+        unsafe:
+            SDL_RenderPresent(self.ren)
+
+    pub def close(self) -> void:
+        unsafe:
+            if (self.ren as usize) != (0 as usize):
+                SDL_DestroyRenderer(self.ren)
+            if (self.win as usize) != (0 as usize):
+                SDL_DestroyWindow(self.win)
+            SDL_Quit()
+
+# SDL_RenderFillRect wants a Pointer[SDL_Rect], and Tauraro has no `&` (address-of
+# a local) -- heap-allocate the one-element out-argument the same way the
+# toolkit's own boxed-enum AST does (toolkit.ui.ast.box_node). One allocation per
+# fill_rect call is not free, but this is a UI redraw path (dozens of rects per
+# frame, not a hot per-pixel loop), so it is not worth a pooled/reused buffer yet.
+def alloc_rect(r: SDL_Rect) -> Pointer[SDL_Rect]:
+    unsafe:
+        mut p = alloc[SDL_Rect](1)
+        p.write(r)
+        return p
+
+# A single poll pops AT MOST one event off SDL's queue. Two separate poll
+# functions (one asking "was it a click", one asking "was it quit") would each
+# call SDL_PollEvent independently and silently steal/drop each other's events
+# -- a real bug caught before it shipped, not a hypothetical one. One poll,
+# one result code:
+#   0 = no event waiting this call
+#   1 = SDL_QUIT (the window's close button, or the last window closing) --
+#       an OS/window-level signal, not a toolkit.types.Event, so it does not
+#       flow through the interpreter's dispatch; the caller's own loop exits.
+#   2 = a mouse-button-down event; coordinates are in _last_click_x/_last_click_y,
+#       read via last_click() as a real toolkit.types.Event for
+#       Interpreter.dispatch().
+# Any other SDL event type (key press, window resize, ...) is silently
+# discarded -- this backend does not wire those up yet.
+mut _last_click_x: int = 0
+mut _last_click_y: int = 0
+
+pub def poll_event() -> int:
+    unsafe:
+        mut ev = alloc[SDL_Event](1)
+        mut n = SDL_PollEvent(ev)
+        if n == 0:
+            return 0
+        mut e = ev.read()
+        if e.type == sdl_quit_event():
+            return 1
+        if e.type == sdl_mousebuttondown():
+            _last_click_x = e.button.x as int
+            _last_click_y = e.button.y as int
+            return 2
+        return 0
+
+pub def last_click() -> Event:
+    return Event.click(_last_click_x, _last_click_y)

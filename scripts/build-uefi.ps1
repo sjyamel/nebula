@@ -24,7 +24,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$sdk = "C:\Users\HomePC\.taupkg\bin\tauraroc-windows-x64"
+# Was hardcoded to a specific machine's home directory (C:\Users\HomePC\...),
+# which only ever worked on the one machine that string happened to match.
+# $env:USERPROFILE resolves to whichever user is actually running this.
+$sdk = Join-Path $env:USERPROFILE ".taupkg\bin\tauraroc-windows-x64"
 $tauraroc = Join-Path $sdk "tauraroc.exe"
 $zig = Join-Path $sdk "zig\zig.exe"
 
@@ -58,11 +61,17 @@ try {
 #
 # -U_WIN32 -U_WIN64 -U_MSC_VER: zig's x86_64-uefi target predefines these
 # (UEFI genuinely shares the Microsoft x64 calling convention and PE format,
-# so this is a deliberate zig choice, not a bug in zig). tauraro_rt.h treats
+# so this is a deliberate zig choice, not a bug in zig). tauraro_rt.h treated
 # bare _WIN32 as "real hosted Windows, windows.h/psapi/bcrypt are available"
-# without checking TAURARO_KERNEL first -- a real gap in the runtime header,
-# see tau_bugs.txt. Undefining them here is the workaround until that's
-# fixed upstream.
+# without checking TAURARO_KERNEL first -- a real gap in the runtime header.
+# UPDATE 2026-09-04: fixed upstream (runtime/tauraro_rt.h now gates those
+# windows.h/psapi/bcrypt #includes on `!defined(TAURARO_BARE)`, and
+# --freestanding always defines TAURARO_KERNEL, which implies TAURARO_BARE)
+# -- this -U workaround is likely no longer necessary against the refreshed
+# SDK compiler, but hasn't been re-verified end-to-end (the zig build-exe
+# step for this target didn't complete in the environment that made this
+# note, for unrelated reasons -- worth a quick try without these three
+# flags before assuming they're still needed).
 $csrc = Get-ChildItem -Path (Join-Path $out "build") -Recurse -Filter *.c | ForEach-Object { $_.FullName }
 if ($csrc.Count -eq 0) { throw "tauraroc emitted no C sources" }
 
