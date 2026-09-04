@@ -1,0 +1,213 @@
+# examples/uefi_demo/render_interactive.tr — real mouse + keyboard on UEFI.
+#
+# render.tr (the sibling file) proves the toolkit renders on UEFI at all: one
+# static frame, one synthetic click, then halt. This file proves the other
+# half -- that a UEFI app can be a genuine, interactive EVENT LOOP, not just a
+# splash screen, using the compiler's `tauraro_uefi_frame` convention (added
+# 2026-09-04 alongside the turnkey `--target uefi-x64` link): export a
+# function with this exact signature and the auto-generated boot stub polls
+# EFI_SIMPLE_POINTER_PROTOCOL (mouse, relative deltas -- a plain `-M q35`
+# already provides this via PS/2, no extra qemu flags) and
+# EFI_SIMPLE_TEXT_INPUT_PROTOCOL (keyboard, via ConIn) every ~16ms and calls
+# it with the current input state:
+#
+#   pub export def tauraro_uefi_frame(fb, width, height, pitch,
+#       mouse_x, mouse_y, mouse_down, has_key, key_code) -> bool
+#
+# Returning `false` would halt the loop; this demo always returns `true` --
+# there's nowhere to "quit" to on bare UEFI, so the qemu window itself is the
+# way out.
+#
+# Build + boot:
+#   .\scripts\build-uefi-turnkey.ps1 -Source examples\uefi_demo\render_interactive.tr
+#   .\scripts\run-uefi.ps1 -OutDir build-uefi-turnkey -Build:$false
+# (drives a real mouse via the QEMU monitor: `mouse_move dx dy`, `mouse_button 1`)
+
+from toolkit.types import Event, EventHandler
+from toolkit.ui.parser import UiParser
+from toolkit.ui.ast import UiNode
+from toolkit.ui.interp import Interpreter, render_to, register_handler
+from toolkit.render.uefi.gop import GopCanvas
+
+# ---- Bump allocator over a pool the UEFI stub allocates for us ----
+# Identical to render.tr's -- see the long comment there for the header-based
+# design and why. `heap_size_mb` for tauraro_uefi_frame programs defaults to
+# 64 (vs 16 for one-shot programs, see main.tr's uefi_zig_stub_frame call
+# site): interp.tr's render() rebuilds the LayoutBox tree from scratch on
+# every call (no incremental relayout, no @free implemented meaningfully
+# anywhere in the toolkit yet), so every full repaint costs real, never-
+# reclaimed heap -- bounding repaints to actual events (see needs_repaint
+# below) rather than every polled frame keeps a session's total cost low
+# enough for 64 MiB to comfortably outlast a multi-minute interactive test.
+
+mut _heap_next: usize = 0 as usize
+mut _heap_end:  usize = 0 as usize
+
+pub export def tauraro_heap_init(base: Pointer[u8], size: usize) -> void:
+    unsafe:
+        _heap_next = base as usize
+        _heap_end = (base as usize) + size
+
+def _heap_round(n: usize) -> usize:
+    mut r = n
+    if r < (8 as usize):
+        r = 8 as usize
+    return ((r + (7 as usize)) / (8 as usize)) * (8 as usize)
+
+@allocator
+def heap_alloc(n: usize) -> Pointer[u8]:
+    unsafe:
+        mut sz = _heap_round(n)
+        if _heap_next + (8 as usize) + sz > _heap_end:
+            return 0 as Pointer[u8]
+        mut hdr = _heap_next as Pointer[usize]
+        hdr.write(sz)
+        mut p = (_heap_next + (8 as usize)) as Pointer[u8]
+        _heap_next = _heap_next + (8 as usize) + sz
+        return p
+
+@free
+def heap_free(p: Pointer[u8]):
+    pass
+
+@realloc
+def heap_realloc(p: Pointer[u8], n: usize) -> Pointer[u8]:
+    unsafe:
+        mut pu = p as usize
+        if pu == (0 as usize):
+            return heap_alloc(n)
+        mut old_hdr = (pu - (8 as usize)) as Pointer[usize]
+        mut old_sz = old_hdr.read()
+        mut sz = _heap_round(n)
+        if sz <= old_sz:
+            return p
+        if pu + old_sz == _heap_next:
+            if _heap_next + (sz - old_sz) > _heap_end:
+                return 0 as Pointer[u8]
+            _heap_next = _heap_next + (sz - old_sz)
+            old_hdr.write(sz)
+            return p
+        mut fresh = heap_alloc(n)
+        mut i: usize = 0 as usize
+        while i < old_sz:
+            fresh.offset(i).write(p.offset(i).read())
+            i = i + (1 as usize)
+        return fresh
+
+@calloc
+def heap_calloc(n: usize, sz: usize) -> Pointer[u8]:
+    unsafe:
+        mut total = n * sz
+        mut q = heap_alloc(total)
+        mut rounded = _heap_round(total)
+        mut i: usize = 0 as usize
+        while i < rounded:
+            q.offset(i).write(0 as u8)
+            i = i + (1 as usize)
+        return q
+
+# ---- UI state -------------------------------------------------------------
+
+mut _click_count: int = 0
+
+pub class OkHandler implements EventHandler:
+    pub tag: int
+
+extend OkHandler:
+    pub def init() -> OkHandler:
+        mut h = OkHandler()
+        h.tag = 0
+        return h
+
+    pub def handle(self, e: Event) -> void:
+        _click_count = _click_count + 1
+
+# `on_key` fires from anywhere in the tree (find_handler_by_event -- a tree
+# scan, not a hit-test, see toolkit/ui/interp.tr); there's exactly one
+# `@on_key(...)` in this markup, so this is effectively a global key handler.
+mut _last_key_code: int = 0
+
+pub class KeyHandler implements EventHandler:
+    pub tag: int
+
+extend KeyHandler:
+    pub def init() -> KeyHandler:
+        mut h = KeyHandler()
+        h.tag = 0
+        return h
+
+    pub def handle(self, e: Event) -> void:
+        _last_key_code = e.code
+
+# Parsed once, reused every frame -- reparsing a fixed string on every poll
+# would be pure waste (see the heap comment above for why waste matters here).
+mut _ready:  bool = false
+mut _it:     Interpreter
+mut _tree:   Pointer[UiNode]
+mut _prev_mouse_down: bool = false
+
+# Called every ~16ms with the UEFI stub's freshly-polled input state.
+pub export def tauraro_uefi_frame(fb: Pointer[u32], width: int, height: int, pitch: int, mouse_x: int, mouse_y: int, mouse_down: bool, has_key: bool, key_code: int) -> bool:
+    mut canvas = GopCanvas.init(fb, width, height, pitch)
+
+    if not _ready:
+        # Same border-/bw-/radius- tokens + hover/pressed feedback as
+        # desktop_demo (2026-09-04) -- both paint through Canvas's plain
+        # fill_rect/set_pixel (toolkit/ui/interp.tr's paint_rounded_rect),
+        # so this native-like chrome is identical on UEFI's GOP framebuffer
+        # with no backend-specific code, same as everything else here.
+        mut src = "<panel \"flex-col p-4 gap-3 bg-slate\" @on_key(on_key)>\n  <text \"text-white\">UEFI LIVE INPUT -- click, type, watch the indicators</text>\n  <panel \"flex-row gap-3 h-60\">\n    <panel \"bg-red grow radius-8\" />\n    <panel \"bg-green grow radius-8\" />\n    <panel \"bg-blue w-60 radius-8\" />\n  </panel>\n  <panel \"flex-row gap-3 h-40 p-3 bg-steel\">\n    <button \"bg-amber grow border-white bw-2 radius-8\" @on_click(on_ok)>\n      <text \"text-black\">CLICK ME</text>\n    </button>\n    <panel \"bg-violet w-90 radius-8\" />\n  </panel>\n  <panel \"flex-row gap-2 h-30 p-3 bg-mist radius-4\">\n    <text \"text-black\">clicks (amber) / last key (green flash) below</text>\n  </panel>\n</panel>\n"
+        mut p = UiParser.init()
+        _tree = p.parse(src)
+        _it = Interpreter.init()
+        mut ok = OkHandler.init()
+        mut key = KeyHandler.init()
+        register_handler(_it, "on_ok", ok)
+        register_handler(_it, "on_key", key)
+        _ready = true
+
+    # Rising edge only -- getState() reports a CONTINUOUS held/not-held
+    # state, and firing a click every poll a button stays down would be a
+    # held-mouse-fires-hundreds-of-clicks bug, not a feature.
+    mut clicked = mouse_down and not _prev_mouse_down
+    _prev_mouse_down = mouse_down
+    _it.hover_x = mouse_x
+    _it.hover_y = mouse_y
+    _it.pressed = mouse_down
+
+    mut needs_repaint = false
+    if not _ready:
+        needs_repaint = true
+    if clicked:
+        _it.dispatch(Event.click(mouse_x, mouse_y))
+        needs_repaint = true
+    if has_key:
+        _it.dispatch(Event.key(key_code))
+        needs_repaint = true
+
+    if needs_repaint:
+        canvas.fill_rect(0, 0, width, height, 0x0B1120)
+        render_to(_it, _tree, canvas)
+
+        # Click counter: up to 10 amber squares, drawn directly (not via
+        # markup/re-parse -- see the heap comment for why that stays cheap).
+        mut shown = _click_count
+        if shown > 10:
+            shown = 10
+        mut i = 0
+        while i < shown:
+            canvas.fill_rect(8 + i * 14, height - 24, 10, 10, 0xF59E0B)
+            i = i + 1
+
+        # Last-key flash: a green square appears whenever THIS frame's
+        # repaint was triggered by a keypress.
+        if has_key:
+            canvas.fill_rect(width - 24, height - 24, 14, 14, 0x22C55E)
+
+        # Cursor marker at the position that triggered this repaint (a click)
+        # or the latest polled position (a keypress) -- not redrawn on pure
+        # mouse motion, so it doesn't smear a trail across painted content
+        # (GOP has no back buffer to restore from under it).
+        canvas.fill_rect(mouse_x - 3, mouse_y - 3, 6, 6, 0xFFFFFF)
+
+    return true

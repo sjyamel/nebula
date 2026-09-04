@@ -1,0 +1,126 @@
+# toolkit.ui.textinput — an editable single-line text field.
+#
+# Deliberately NOT a markup primitive like <panel>/<text>/<button>: those are
+# declarative, parsed ONCE from a static class string, and toolkit.ui.interp's
+# render()/layout_tree rebuild the whole LayoutBox tree from that same
+# unchanged string on every call (see Interpreter.render). There is no place
+# in that pipeline for "the string the user is actively typing, which changes
+# every keystroke" to live -- the AST has no mutable-text-node concept, and
+# giving it one is a parser/AST change, not a rendering one (a real follow-up,
+# not a quick add).
+#
+# So this stays host-side: a plain class the caller owns directly, alongside
+# (not inside) the Interpreter/markup tree. Wire it into an event loop like:
+#   mut name_field = TextInput.init(24)
+#   ...
+#   if clicked: name_field.click_inside(mouse_x, mouse_y, fx, fy, fw, fh)
+#   if has_key: name_field.handle_key(key_code)
+#   ...
+#   name_field.paint(canvas, fx, fy, fw, fh)
+# at the same (fx,fy,fw,fh) rect every frame -- same "the host draws the
+# dynamic parts itself, outside render_to()" pattern already used for
+# examples/uefi_demo/render_interactive.tr's click-counter/key-flash squares.
+
+from toolkit.render.canvas import Canvas
+from toolkit.text.font import Font
+from toolkit.ui.interp import paint_rounded_rect
+from string.str import Str
+
+pub class TextInput:
+    pub text:      str
+    pub max_len:   int
+    pub focused:   bool
+    pub cursor_on: bool   # blink phase; caller toggles this on a timer (see tick())
+    pub blink_ctr: int
+    pub bg:        int
+    pub fg:        int
+    pub border:    int
+    pub font:      Font
+
+extend TextInput:
+    pub def init(max_len: int) -> TextInput:
+        mut t = TextInput()
+        t.text = ""
+        t.max_len = max_len
+        t.focused = false
+        t.cursor_on = true
+        t.blink_ctr = 0
+        t.bg = 0xFFFFFF
+        t.fg = 0x0F172A
+        t.border = 0x64748B
+        t.font = Font.load()
+        return t
+
+    # Backspace (8) deletes the last character. Enter (13, 10 for a bare '\n')
+    # unfocuses rather than inserting a newline -- single-line field, no
+    # multi-line editing. Anything else in printable ASCII (32..126) appends,
+    # up to max_len; codes outside that range (arrow keys' scan codes, etc.)
+    # are silently ignored rather than appended as garbage.
+    pub def handle_key(self, code: int) -> void:
+        if not self.focused:
+            return
+        if code == 8:
+            mut n = Str.len(self.text)
+            if n > 0:
+                self.text = Str.slice(self.text, 0, n - 1)
+            return
+        if code == 13:
+            self.focused = false
+            return
+        if code == 10:
+            self.focused = false
+            return
+        if code >= 32 and code <= 126:
+            if Str.len(self.text) < self.max_len:
+                self.text = self.text + (code as char).to_str()
+
+    # Click-to-focus: pass the mouse position and this field's own rect (the
+    # same one you'll call paint() with). Returns whether the click landed
+    # inside -- also sets .focused accordingly, INCLUDING clearing it on a
+    # click outside, so clicking elsewhere blurs the field the way a real
+    # text box does. Call this for every field each click, in a fixed order,
+    # so only the last one checked ends up focused if two overlap.
+    pub def click_inside(self, mx: int, my: int, x: int, y: int, w: int, h: int) -> bool:
+        mut inside = mx >= x and mx < x + w and my >= y and my < y + h
+        self.focused = inside
+        return inside
+
+    # Advances the cursor blink phase -- call once per frame (e.g. from the
+    # same ~16ms loop that polls input); flips roughly twice a second at a
+    # 16ms frame period. A no-op visually while unfocused (paint() only draws
+    # the cursor when focused), but harmless to call unconditionally.
+    pub def tick(self) -> void:
+        self.blink_ctr = self.blink_ctr + 1
+        if self.blink_ctr >= 30:
+            self.blink_ctr = 0
+            self.cursor_on = not self.cursor_on
+
+    pub def paint(self, c: Canvas, x: int, y: int, w: int, h: int) -> void:
+        mut border_color = self.border
+        if self.focused:
+            border_color = 0x3B82F6
+        paint_rounded_rect(c, x, y, w, h, 6, border_color)
+        paint_rounded_rect(c, x + 2, y + 2, w - 4, h - 4, 4, self.bg)
+
+        mut cw = self.font.cell_w()
+        mut ch = self.font.cell_h()
+        mut n = Str.len(self.text)
+        mut tx = x + 8
+        mut ty = y + (h - ch) / 2
+
+        mut i = 0
+        while i < n:
+            mut codepoint = Str.char_at(self.text, i)
+            mut col = 0
+            while col < cw:
+                mut row = 0
+                while row < ch:
+                    if self.font.pixel_set(codepoint, col, row):
+                        c.set_pixel(tx + i * cw + col, ty + row, self.fg)
+                    row = row + 1
+                col = col + 1
+            i = i + 1
+
+        if self.focused and self.cursor_on:
+            mut cx = tx + n * cw
+            c.fill_rect(cx, ty, 2, ch, self.fg)

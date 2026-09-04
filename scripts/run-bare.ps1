@@ -19,14 +19,28 @@ param(
     [string]$OutDir   = "build-bare",
     [string]$Machine  = "mps2-an385",
     [int]$MaxSeconds  = 20,
-    [bool]$Build      = $true
+    [bool]$Build      = $true,
+    [string]$Qemu     = ""
 )
 
 $ErrorActionPreference = "Stop"
 
-$qemu = "C:\Program Files\qemu\qemu-system-arm.exe"
+# Same two-layout auto-detection as run-uefi.ps1: winget's QEMU package vs.
+# MSYS2's (pacman -S mingw-w64-x86_64-qemu) -- whichever is actually present.
+if ($Qemu -eq "") {
+    $wingetQemu = "C:\Program Files\qemu\qemu-system-arm.exe"
+    $msys2Qemu  = "C:\msys64\mingw64\bin\qemu-system-arm.exe"
+    if (Test-Path $wingetQemu) { $Qemu = $wingetQemu }
+    elseif (Test-Path $msys2Qemu) { $Qemu = $msys2Qemu }
+    else {
+        throw "qemu-system-arm.exe not found (checked $wingetQemu and $msys2Qemu) -- " +
+              "install with: winget install --id SoftwareFreedomConservancy.QEMU (run as admin), " +
+              "or: pacman -S mingw-w64-x86_64-qemu"
+    }
+}
+$qemu = $Qemu
 if (-not (Test-Path $qemu)) {
-    throw "qemu-system-arm.exe not found at $qemu -- install with: winget install --id SoftwareFreedomConservancy.QEMU (run as admin), or pass a different path by editing this script."
+    throw "qemu-system-arm.exe not found at $qemu"
 }
 
 if ($Build) {

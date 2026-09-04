@@ -20,45 +20,59 @@ pub def unset() -> int:
     return 0 - 1
 
 pub class Style:
-    pub dir:  int
-    pub pad:  int
-    pub gap:  int
-    pub w:    int
-    pub h:    int
-    pub grow: int
-    pub bg:   int
-    pub fg:   int
+    pub dir:      int
+    pub pad:      int
+    pub gap:      int
+    pub w:        int
+    pub h:        int
+    pub grow:     int
+    pub bg:       int
+    pub fg:       int
+    pub border:   int   # unset() = no border, matching bg's sentinel convention
+    pub border_w: int   # px; a set border color with border_w==0 paints nothing
+    pub radius:   int   # px corner radius, 0 = square corners (the pre-existing look)
 
 extend Style:
     pub def default() -> Style:
         mut s = Style()
-        s.dir  = dir_row()
-        s.pad  = 0
-        s.gap  = 0
-        s.w    = unset()
-        s.h    = unset()
-        s.grow = 0
-        s.bg   = unset()
-        s.fg   = 0xE6E6E6
+        s.dir      = dir_row()
+        s.pad      = 0
+        s.gap      = 0
+        s.w        = unset()
+        s.h        = unset()
+        s.grow     = 0
+        s.bg       = unset()
+        s.fg       = 0xE6E6E6
+        s.border   = unset()
+        s.border_w = 0
+        s.radius   = 0
         return s
 
     pub def copy(self) -> Style:
         mut s = Style()
-        s.dir  = self.dir
-        s.pad  = self.pad
-        s.gap  = self.gap
-        s.w    = self.w
-        s.h    = self.h
-        s.grow = self.grow
-        s.bg   = self.bg
-        s.fg   = self.fg
+        s.dir      = self.dir
+        s.pad      = self.pad
+        s.gap      = self.gap
+        s.w        = self.w
+        s.h        = self.h
+        s.grow     = self.grow
+        s.bg       = self.bg
+        s.fg       = self.fg
+        s.border   = self.border
+        s.border_w = self.border_w
+        s.radius   = self.radius
         return s
 
     pub def to_str(self) -> str:
-        return "Style(dir=" + self.dir.to_str() + " pad=" + self.pad.to_str() + " gap=" + self.gap.to_str() + " w=" + self.w.to_str() + " h=" + self.h.to_str() + " grow=" + self.grow.to_str() + " bg=" + self.bg.to_str() + ")"
+        return "Style(dir=" + self.dir.to_str() + " pad=" + self.pad.to_str() + " gap=" + self.gap.to_str() + " w=" + self.w.to_str() + " h=" + self.h.to_str() + " grow=" + self.grow.to_str() + " bg=" + self.bg.to_str() + " border=" + self.border.to_str() + " border_w=" + self.border_w.to_str() + " radius=" + self.radius.to_str() + ")"
 
-# A small named palette. Unknown names resolve to the sentinel so a typo shows
-# up as "nothing was painted" rather than a wrong-but-plausible color.
+# A named palette -- Tailwind's 500-shade values (the same source the
+# original 10 came from), extended 2026-09-04 to cover the rest of Tailwind's
+# hue wheel plus a few common aliases (navy/maroon/gold/silver/charcoal/
+# crimson/turquoise) UI authors reach for by habit. Unknown names resolve to
+# the sentinel so a typo shows up as "nothing was painted" rather than a
+# wrong-but-plausible color -- `bg-#RRGGBB` (parse_hex_color, below) is the
+# escape hatch for anything not in here.
 pub def color_by_name(name: str) -> int:
     if name == "black":
         return 0x000000
@@ -80,6 +94,113 @@ pub def color_by_name(name: str) -> int:
         return 0xF59E0B
     if name == "violet":
         return 0x8B5CF6
+    if name == "orange":
+        return 0xF97316
+    if name == "yellow":
+        return 0xEAB308
+    if name == "lime":
+        return 0x84CC16
+    if name == "emerald":
+        return 0x10B981
+    if name == "teal":
+        return 0x14B8A6
+    if name == "cyan":
+        return 0x06B6D4
+    if name == "sky":
+        return 0x0EA5E9
+    if name == "indigo":
+        return 0x6366F1
+    if name == "purple":
+        return 0xA855F7
+    if name == "fuchsia":
+        return 0xD946EF
+    if name == "pink":
+        return 0xEC4899
+    if name == "rose":
+        return 0xF43F5E
+    if name == "gray":
+        return 0x6B7280
+    if name == "grey":
+        return 0x6B7280
+    if name == "zinc":
+        return 0x71717A
+    if name == "stone":
+        return 0x78716C
+    if name == "navy":
+        return 0x1E3A8A
+    if name == "maroon":
+        return 0x7F1D1D
+    if name == "brown":
+        return 0x78350F
+    if name == "gold":
+        return 0xCA8A04
+    if name == "silver":
+        return 0xD1D5DB
+    if name == "charcoal":
+        return 0x27272A
+    if name == "crimson":
+        return 0xDC2626
+    if name == "turquoise":
+        return 0x06B6D4
+    if name == "magenta":
+        return 0xD946EF
+    if name == "olive":
+        return 0x65A30D
+    return unset()
+
+def hex_digit_val(c: str) -> int:
+    if c == "0": return 0
+    if c == "1": return 1
+    if c == "2": return 2
+    if c == "3": return 3
+    if c == "4": return 4
+    if c == "5": return 5
+    if c == "6": return 6
+    if c == "7": return 7
+    if c == "8": return 8
+    if c == "9": return 9
+    if c == "a": return 10
+    if c == "A": return 10
+    if c == "b": return 11
+    if c == "B": return 11
+    if c == "c": return 12
+    if c == "C": return 12
+    if c == "d": return 13
+    if c == "D": return 13
+    if c == "e": return 14
+    if c == "E": return 14
+    if c == "f": return 15
+    if c == "F": return 15
+    return 0 - 1
+
+# Arbitrary colors beyond the named palette: exactly 6 hex digits (RRGGBB,
+# no leading '#' -- the token itself carries that, see "bg-#" etc. in
+# apply_utility). Same typo policy as color_by_name: anything malformed
+# resolves to the sentinel rather than a wrong color or a fatal error.
+pub def parse_hex_color(s: str) -> int:
+    if Str.len(s) != 6:
+        return unset()
+    mut v = 0
+    mut i = 0
+    while i < 6:
+        mut d = hex_digit_val(Str.slice(s, i, i + 1))
+        if d < 0:
+            return unset()
+        v = v * 16 + d
+        i = i + 1
+    return v
+
+# Resolves the part of a color token after its prefix (e.g. "bg-#3B82F6" ->
+# "#3B82F6", "bg-red" -> "red") to a packed color, trying the named palette
+# first and a leading-'#' hex literal second -- one place both `bg-`/`text-`/
+# `border-` share, so a UI author writes `bg-#RRGGBB` exactly like `bg-red`
+# and gets the same "typo -> nothing painted" safety either way.
+def resolve_color_token(name: str) -> int:
+    mut c = color_by_name(name)
+    if c != unset():
+        return c
+    if Str.starts_with(name, "#"):
+        return parse_hex_color(Str.slice(name, 1, Str.len(name)))
     return unset()
 
 # Apply one utility token to a style, in place. Unknown tokens are ignored
@@ -124,17 +245,33 @@ pub def apply_utility(s: Style, token: str) -> void:
         return
 
     if Str.starts_with(token, "bg-"):
-        mut name = Str.slice(token, 3, Str.len(token))
-        mut c = color_by_name(name)
+        mut c = resolve_color_token(Str.slice(token, 3, Str.len(token)))
         if c != unset():
             s.bg = c
         return
 
     if Str.starts_with(token, "text-"):
-        mut name = Str.slice(token, 5, Str.len(token))
-        mut c = color_by_name(name)
+        mut c = resolve_color_token(Str.slice(token, 5, Str.len(token)))
         if c != unset():
             s.fg = c
+        return
+
+    if Str.starts_with(token, "border-"):
+        mut bc = resolve_color_token(Str.slice(token, 7, Str.len(token)))
+        if bc != unset():
+            s.border = bc
+        return
+
+    if Str.starts_with(token, "bw-"):
+        mut v = Str.slice(token, 3, Str.len(token))
+        if Str.is_digit(v):
+            s.border_w = Str.parse_int(v)
+        return
+
+    if Str.starts_with(token, "radius-"):
+        mut v = Str.slice(token, 7, Str.len(token))
+        if Str.is_digit(v):
+            s.radius = Str.parse_int(v)
         return
 
 pub class StyleCache:
