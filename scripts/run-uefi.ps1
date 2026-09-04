@@ -9,8 +9,17 @@
 # Pass -NoWindow to skip opening the interactive gtk window entirely, e.g.
 # for a quick unattended check.
 #
-# QEMU ships OVMF itself (share\edk2-x86_64-code.fd) -- nothing else to
-# install.
+# OVMF firmware: tries two install layouts (whichever is present), since
+# different QEMU distributions ship it differently --
+#   1. winget's SoftwareFreedomConservancy.QEMU package: a single
+#      self-contained "C:\Program Files\qemu\share\edk2-x86_64-code.fd" (code
+#      + variable store combined) -- one read-only pflash drive is enough.
+#   2. MSYS2's mingw-w64-x86_64-qemu package: SPLIT code/vars images
+#      (edk2-x86_64-code.fd has no variable store of its own) -- booting with
+#      only that file as a single read-only pflash drive fails to load at
+#      all; needs a SECOND, writable pflash drive for vars (a fresh zeroed
+#      4 MiB image is fine -- OVMF initializes it on first boot).
+# Pass -Qemu/-OvmfCode/-OvmfVars to override auto-detection entirely.
 
 param(
     [string]$Source     = "examples\uefi_demo\render.tr",
@@ -19,15 +28,41 @@ param(
     [bool]$Build        = $true,
     [switch]$NoWindow,
     [bool]$Screenshot   = $true,
-    [int]$BootSeconds   = 10
+    # MSYS2's OVMF build shows its own TianoCore boot-manager menu before
+    # loading BOOTX64.EFI (dismissed automatically via a `sendkey ret` nudge,
+    # below) -- 10s wasn't enough headroom for menu-dismiss + actual app
+    # boot together in practice; 20s was reliable. Override lower for the
+    # winget OVMF (no menu, boots BOOTX64.EFI immediately).
+    [int]$BootSeconds   = 20,
+    [string]$Qemu       = "",
+    [string]$OvmfCode   = "",
+    [string]$OvmfVars   = ""
 )
 
 $ErrorActionPreference = "Stop"
 
-$qemu = "C:\Program Files\qemu\qemu-system-x86_64.exe"
-$ovmf = "C:\Program Files\qemu\share\edk2-x86_64-code.fd"
-foreach ($f in @($qemu, $ovmf)) {
-    if (-not (Test-Path $f)) { throw "missing: $f -- install with: winget install --id SoftwareFreedomConservancy.QEMU (run as admin)" }
+$needsVarsDrive = $false
+if ($Qemu -eq "" -or $OvmfCode -eq "") {
+    $wingetQemu = "C:\Program Files\qemu\qemu-system-x86_64.exe"
+    $wingetOvmf = "C:\Program Files\qemu\share\edk2-x86_64-code.fd"
+    $msys2Qemu  = "C:\msys64\mingw64\bin\qemu-system-x86_64.exe"
+    $msys2Ovmf  = "C:\msys64\mingw64\share\qemu\edk2-x86_64-code.fd"
+
+    if ((Test-Path $wingetQemu) -and (Test-Path $wingetOvmf)) {
+        if ($Qemu -eq "") { $Qemu = $wingetQemu }
+        if ($OvmfCode -eq "") { $OvmfCode = $wingetOvmf }
+    } elseif ((Test-Path $msys2Qemu) -and (Test-Path $msys2Ovmf)) {
+        if ($Qemu -eq "") { $Qemu = $msys2Qemu }
+        if ($OvmfCode -eq "") { $OvmfCode = $msys2Ovmf }
+        $needsVarsDrive = $true
+    } else {
+        throw "no QEMU+OVMF install found (checked $wingetQemu and $msys2Qemu) -- " +
+              "install with: winget install --id SoftwareFreedomConservancy.QEMU (run as admin), " +
+              "or: pacman -S mingw-w64-x86_64-qemu"
+    }
+}
+foreach ($f in @($Qemu, $OvmfCode)) {
+    if (-not (Test-Path $f)) { throw "missing: $f" }
 }
 
 if ($Build) {
@@ -47,7 +82,26 @@ if (-not (Test-Path $elf)) { throw "no BOOTX64.EFI at $elf -- build it first" }
 # the space and QEMU reports "Could not open 'C:\Program'".
 $argParts = @(
     "-M", "q35", "-m", "256",
-    "-drive", "`"if=pflash,format=raw,readonly=on,file=$ovmf`"",
+    "-drive", "`"if=pflash,format=raw,readonly=on,file=$OvmfCode`""
+)
+
+if ($needsVarsDrive) {
+    # Split OVMF (MSYS2's package): needs its own writable vars store, or the
+    # firmware never loads at all ("could not load PC BIOS" from a single
+    # read-only code-only pflash drive). A fresh zeroed 4 MiB image per
+    # $OutDir is fine -- OVMF initializes it on first boot; not reused across
+    # builds since $OutDir is wiped by build-uefi.ps1/build-uefi-turnkey.ps1
+    # each run anyway.
+    if ($OvmfVars -eq "") {
+        $OvmfVars = Join-Path (Resolve-Path $OutDir).Path "ovmf_vars.fd"
+        $fs = [System.IO.File]::Create($OvmfVars)
+        $fs.SetLength(4MB)
+        $fs.Close()
+    }
+    $argParts += @("-drive", "`"if=pflash,format=raw,file=$OvmfVars`"")
+}
+
+$argParts += @(
     "-drive", "`"format=raw,file=fat:rw:$espRoot`"",
     "-vga", "std"
 )
@@ -81,7 +135,14 @@ if ($Screenshot) {
         Write-Host "qemu exited immediately (code $($psi.ExitCode)) -- it never got to boot anything" -ForegroundColor Red
     }
 
-    $shotPpm = Join-Path $OutDir "screenshot.ppm"
+    # Built from an ABSOLUTE resolved base, not a bare relative Join-Path:
+    # .NET file APIs (ReadAllBytes, used by ppm-to-png.ps1) resolve relative
+    # paths against [Environment]::CurrentDirectory, which PowerShell's
+    # Set-Location does not reliably keep in sync with $PWD across a
+    # long-lived host process -- a relative $shotPpm silently resolved
+    # against a stale directory from an unrelated earlier command in the
+    # same session, "finding" nothing at a path in the wrong repo entirely.
+    $shotPpm = Join-Path (Resolve-Path $OutDir).Path "screenshot.ppm"
     if (Test-Path $shotPpm) { Remove-Item $shotPpm -Force }
 
     # The monitor's telnet listener binds at qemu startup, well before OVMF
@@ -103,10 +164,6 @@ if ($Screenshot) {
         }
     }
 
-    if ($null -ne $client) {
-        Start-Sleep -Seconds $BootSeconds
-    }
-
     if ($null -eq $client) {
         Write-Host "could not reach the QEMU monitor on port $monPort within 5s" -ForegroundColor Yellow
         if ($psi.HasExited) {
@@ -123,10 +180,40 @@ if ($Screenshot) {
             # Drain the HMP banner so it doesn't end up inside the .ppm path arg.
             while ($stream.DataAvailable) { $stream.ReadByte() | Out-Null }
 
-            $cmd = "screendump " + (Resolve-Path $OutDir).Path + "\screenshot.ppm`n"
+            # MSYS2's OVMF build sits at its own TianoCore splash / boot-manager
+            # menu waiting for a keypress before it ever loads BOOTX64.EFI --
+            # confirmed by an early screendump showing only the TianoCore logo
+            # after 20s with nothing sent. `sendkey ret` a couple of times
+            # nudges it through the menu to the default (only) boot entry,
+            # same as a human pressing Enter at the console -- harmless once
+            # already past the menu (an extra Enter reaching our own app's
+            # click-only event loop is a no-op). Then the real boot-time wait.
+            1..3 | ForEach-Object {
+                $kb = [System.Text.Encoding]::ASCII.GetBytes("sendkey ret`n")
+                $stream.Write($kb, 0, $kb.Length)
+                Start-Sleep -Milliseconds 500
+            }
+            while ($stream.DataAvailable) { $stream.ReadByte() | Out-Null }
+            Start-Sleep -Seconds $BootSeconds
+
+            # QEMU's HMP line reader treats backslash as an escape prefix
+            # (confirmed: a raw Windows path triggers "unsupported escape
+            # code: '\U'"), so backslashes must become forward slashes first
+            # (Windows accepts either) -- and the whole thing still needs
+            # quoting for the space in a username like "Yusee Habibu".
+            $ppmPathFwd = (Resolve-Path $OutDir).Path.Replace('\', '/') + "/screenshot.ppm"
+            $cmd = 'screendump "' + $ppmPathFwd + '"' + "`n"
             $bytes = [System.Text.Encoding]::ASCII.GetBytes($cmd)
             $stream.Write($bytes, 0, $bytes.Length)
             Start-Sleep -Seconds 1
+            # Read back whatever HMP echoed (its own error text, if any) so a
+            # failed screendump is diagnosable instead of just "no screenshot".
+            $replyBytes = New-Object System.Collections.Generic.List[byte]
+            while ($stream.DataAvailable) { $replyBytes.Add([byte]$stream.ReadByte()) }
+            if ($replyBytes.Count -gt 0) {
+                $reply = [System.Text.Encoding]::ASCII.GetString($replyBytes.ToArray()).Trim()
+                if ($reply -ne "") { Write-Host "monitor reply: $reply" -ForegroundColor DarkGray }
+            }
             $stream.Close()
             $client.Close()
         } catch {

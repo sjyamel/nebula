@@ -417,11 +417,25 @@ build-exe` step are no longer strictly necessary. `tauraroc` now has a turnkey U
 tauraroc examples\uefi_demo\render.tr --target uefi-x64 --freestanding -o app
 ```
 
-produces `app.efi` directly (verified: real MZ/PE header, and boots under `qemu-system-x86_64 -M
-q35` with split-pflash OVMF far enough to survive past firmware handoff into the app's own `hlt`
-loop — not re-verified with an actual screenshot compare in the session that added this, so treat
-"renders correctly" as carried over from the `boot.zig` baseline above, not re-proven). Same
-`_WIN32`/`_WIN64`/`_MSC_VER` undef and same well-known-named-export contract
+produces `app.efi` directly (real MZ/PE header; **now screenshot-verified end to end**, 2026-09-04
+follow-up session — `scripts/build-uefi-turnkey.ps1` + `scripts/run-uefi.ps1 -OutDir
+build-uefi-turnkey -Build:$false` renders the exact same "TAURARO ON UEFI" panel/text/button layout
+under qemu+OVMF as the `boot.zig` baseline, pixel-identical in kind, not just "survives to hlt").
+Two portability fixes landed in `run-uefi.ps1` alongside this verification, both applicable
+regardless of which UEFI build script produced the `.efi`:
+- OVMF auto-detection now tries winget's single-file layout first, then MSYS2's SPLIT code/vars
+  layout (`pacman -S mingw-w64-x86_64-qemu`) as a fallback — this box only has the MSYS2 one, and a
+  single read-only pflash drive with a code-only image fails to load at all ("could not load PC
+  BIOS"); needs a second writable pflash drive for vars.
+- MSYS2's OVMF build shows its own TianoCore boot-manager menu before loading `BOOTX64.EFI` (the
+  winget layout apparently doesn't, or didn't when this was last verified) — `run-uefi.ps1` now
+  sends `sendkey ret` a few times over the monitor connection to dismiss it automatically; default
+  `-BootSeconds` bumped 10 -> 20 to cover menu-dismiss + actual app boot. Also fixed: HMP's
+  `screendump` path arg needs forward slashes (backslash is an HMP escape prefix) and quoting (a
+  username with a space breaks unquoted whitespace-split args); a stray relative-path bug in the
+  screenshot Test-Path/ReadAllBytes calls that silently resolved against a stale unrelated
+  directory across long-lived PowerShell sessions.
+Same `_WIN32`/`_WIN64`/`_MSC_VER` undef and same well-known-named-export contract
 (`tauraro_heap_init(base, size)` + `tauraro_uefi_main`/`tauraro_ui_render(fb, width, height,
 pitch)`) — `render.tr` needed zero changes, it already used `tauraro_ui_render`. The compiler
 auto-generates an equivalent, protocol-agnostic zig glue stub internally (not written to disk for
