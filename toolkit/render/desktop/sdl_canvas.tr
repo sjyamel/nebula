@@ -40,6 +40,7 @@ from toolkit.render.desktop.sdl_bindings import SDL_Init, SDL_Quit, SDL_CreateWi
 from toolkit.render.desktop.sdl_bindings import SDL_DestroyRenderer, SDL_DestroyWindow, SDL_PollEvent
 from toolkit.render.desktop.sdl_bindings import SDL_SetRenderDrawColor, SDL_RenderFillRect, SDL_RenderDrawPoint
 from toolkit.render.desktop.sdl_bindings import SDL_RenderPresent, SDL_RenderClear, SDL_Delay, SDL_GetError
+from toolkit.render.desktop.sdl_bindings import SDL_GetMouseState
 
 # Stable, version-independent SDL2 ABI constants that bindgen's macro pass
 # didn't pick up (defined via bit-shift/indirection macros, not plain literals).
@@ -61,6 +62,9 @@ pub def sdl_quit_event() -> Uint32:
 
 pub def sdl_mousebuttondown() -> Uint32:
     return 1025 as Uint32
+
+pub def sdl_keydown() -> Uint32:
+    return 768 as Uint32
 
 pub class SdlCanvas implements Canvas:
     pub win: Pointer[SDL_Window]
@@ -156,7 +160,7 @@ def alloc_rect(r: SDL_Rect) -> Pointer[SDL_Rect]:
         p.write(r)
         return p
 
-# A single poll pops AT MOST one event off SDL's queue. Two separate poll
+# A single poll pops AT MOST one event off SDL's queue. Separate poll
 # functions (one asking "was it a click", one asking "was it quit") would each
 # call SDL_PollEvent independently and silently steal/drop each other's events
 # -- a real bug caught before it shipped, not a hypothetical one. One poll,
@@ -168,10 +172,16 @@ def alloc_rect(r: SDL_Rect) -> Pointer[SDL_Rect]:
 #   2 = a mouse-button-down event; coordinates are in _last_click_x/_last_click_y,
 #       read via last_click() as a real toolkit.types.Event for
 #       Interpreter.dispatch().
-# Any other SDL event type (key press, window resize, ...) is silently
-# discarded -- this backend does not wire those up yet.
+#   3 = a keydown event; the key's SDL_Keycode is in _last_key_code, read via
+#       last_key() -- SDL_Keycode is the ASCII value for printable keys
+#       (SDLK_a == 'a' == 97), the same rough convention UEFI's
+#       unicode_char gives tauraro_uefi_frame, so on_key handlers see a
+#       consistent code across backends.
+# Any other SDL event type (window resize, ...) is silently discarded -- this
+# backend does not wire those up yet.
 mut _last_click_x: int = 0
 mut _last_click_y: int = 0
+mut _last_key_code: int = 0
 
 pub def poll_event() -> int:
     unsafe:
@@ -186,7 +196,25 @@ pub def poll_event() -> int:
             _last_click_x = e.button.x as int
             _last_click_y = e.button.y as int
             return 2
+        if e.type == sdl_keydown():
+            _last_key_code = e.key.keysym.sym as int
+            return 3
         return 0
 
 pub def last_click() -> Event:
     return Event.click(_last_click_x, _last_click_y)
+
+pub def last_key() -> Event:
+    return Event.key(_last_key_code)
+
+# Continuous mouse position + left-button state, for hover/pressed feedback
+# (Interpreter.hover_x/hover_y/pressed) -- unlike poll_event()'s discrete
+# click events, this doesn't drain the SDL event queue at all, so it's safe
+# to call every frame regardless of what poll_event() saw this frame.
+pub def mouse_state() -> (int, int, bool):
+    unsafe:
+        mut mx = alloc[c_int](1)
+        mut my = alloc[c_int](1)
+        mut buttons = SDL_GetMouseState(mx, my)
+        mut left_down = (buttons & (1 as Uint32)) != (0 as Uint32)
+        return (mx.read() as int, my.read() as int, left_down)

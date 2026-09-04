@@ -3,8 +3,16 @@
 build/
 build-bare*/
 build-uefi*/
+build-desktop*/
 *.elf
 *.ld
+*.efi
+*_link.log
+*_build_log.txt
+
+# SDL2's runtime DLL -- a redistributable, not source; build-desktop.ps1
+# copies it from the local mingw64 install next to every build automatically.
+SDL2.dll
 
 # Compiled executables (tauraroc names them after the entry file's basename)
 # and their MSVC debug-symbol byproduct.

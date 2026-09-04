@@ -49,9 +49,18 @@ pub def ev_key() -> int:
 pub def event_name_click() -> str:
     return "on_click"
 
+# 2026-09-04: real UEFI keyboard input (EFI_SIMPLE_TEXT_INPUT_PROTOCOL,
+# polled by the compiler-generated boot stub -- see tauraro_uefi_frame in
+# the UEFI turnkey target) and SDL2 keydown both now produce ev_key()
+# events, so this finally has a dispatch target.
+pub def event_name_key() -> str:
+    return "on_key"
+
 pub def event_name_for_kind(kind: int) -> str:
     if kind == ev_click():
         return event_name_click()
+    if kind == ev_key():
+        return event_name_key()
     return ""
 
 pub class Event:

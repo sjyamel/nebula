@@ -10,7 +10,7 @@
 # key someone deliberately registered, nothing happens. There is deliberately no
 # path from a name in a UI file to an arbitrary function in the host.
 
-from toolkit.types import Event, EventHandler, event_name_for_kind
+from toolkit.types import Event, EventHandler, event_name_for_kind, ev_key, rgb, red_of, green_of, blue_of
 from toolkit.ui.ast import UiNode, max_depth
 from toolkit.ui.style import StyleCache, unset
 from toolkit.layout.flex import LayoutBox, layout_tree, kind_text
@@ -31,6 +31,14 @@ pub class Interpreter:
     pub root:     LayoutBox
     pub has_root: bool
     pub renders:  int
+    # Native-like button feedback: any box with a non-empty event_name (i.e.
+    # anything a UI author wired to `@on_click(...)`) darkens on hover, darker
+    # still while pressed -- callers set these from their own per-frame input
+    # state (SDL2's polled mouse position, UEFI's tauraro_uefi_frame args, ...)
+    # before calling render(); left at (-1,-1)/false, nothing is ever "hot".
+    pub hover_x:  int
+    pub hover_y:  int
+    pub pressed:  bool
 
 extend Interpreter:
     pub def init() -> Interpreter:
@@ -40,6 +48,9 @@ extend Interpreter:
         it.handlers = []
         it.has_root = false
         it.renders = 0
+        it.hover_x = 0 - 1
+        it.hover_y = 0 - 1
+        it.pressed = false
         return it
 
     # Takes an already-interface-typed handler; callers should go through the
@@ -70,8 +81,42 @@ extend Interpreter:
         self.paint(self.root, c)
 
     def paint(self, box: LayoutBox, c: Canvas) -> void:
-        if box.style.bg != unset():
-            c.fill_rect(box.x, box.y, box.w, box.h, box.style.bg)
+        # Native-like hover/pressed feedback: only for boxes an author wired
+        # to an event (event_name != "") -- a plain decorative panel never
+        # darkens just because the cursor happens to be over it.
+        mut is_hot = box.event_name != "" and box.contains(self.hover_x, self.hover_y)
+        mut bg = box.style.bg
+        mut border = box.style.border
+        if is_hot:
+            mut pct = 15
+            if self.pressed:
+                pct = 30
+            if bg != unset():
+                bg = darken_color(bg, pct)
+            if border != unset():
+                border = darken_color(border, pct)
+
+        mut has_border = border != unset() and box.style.border_w > 0
+        if has_border:
+            # Outline via two nested fills, not a stroke primitive: Canvas only
+            # exposes fill_rect/set_pixel (see toolkit/render/canvas.tr -- kept
+            # deliberately minimal so every backend, including the bare-metal
+            # and UEFI framebuffer ones, implements the same four methods).
+            # Paint the full box in the border color, then paint an inset
+            # box (by border_w on every side) in the background color on top,
+            # leaving exactly a border_w-wide ring visible.
+            paint_rounded_rect(c, box.x, box.y, box.w, box.h, box.style.radius, border)
+            if bg != unset():
+                mut bw = box.style.border_w
+                mut inner_r = box.style.radius - bw
+                if inner_r < 0:
+                    inner_r = 0
+                mut iw = box.w - bw * 2
+                mut ih = box.h - bw * 2
+                if iw > 0 and ih > 0:
+                    paint_rounded_rect(c, box.x + bw, box.y + bw, iw, ih, inner_r, bg)
+        elif bg != unset():
+            paint_rounded_rect(c, box.x, box.y, box.w, box.h, box.style.radius, bg)
 
         if box.kind == kind_text():
             self.paint_text(box, c)
@@ -80,6 +125,15 @@ extend Interpreter:
         while i < len(box.children):
             self.paint(box.children[i], c)
             i = i + 1
+
+    # (paint_rounded_rect / paint_corner are free functions below -- see their
+    # own comments for why: Canvas has no fill-rounded-rect or circle
+    # primitive, deliberately, so this stays plain fill_rect/set_pixel calls
+    # a method can make just as easily as a free function could; they're
+    # free functions purely to sit next to hit_test/find_handler_by_event,
+    # the toolkit's other tree/paint free functions, not because of the
+    # method-vs-free-function recursion gotcha those two have (this isn't
+    # recursive).
 
     # Real glyph painting from the baked bitmap font (toolkit/text/), one
     # pixel at a time via Canvas.set_pixel -- an irregular glyph shape has no
@@ -116,7 +170,20 @@ extend Interpreter:
         if wanted == "":
             return false
 
-        mut name = hit_test(self.root, e.x, e.y, 0, wanted)
+        # Key events have no (x,y) to hit-test against -- Event.key() sets
+        # both to 0, and hit-testing at literal pixel (0,0) would only ever
+        # match whatever happens to sit in the top-left corner, not "the
+        # thing that wants keyboard input". Dispatch by tree scan instead:
+        # the first node anywhere in the tree with `@on_key(...)` wins, a
+        # global (focus-less) listener rather than per-widget focus tracking
+        # -- enough for the toolkit's current single-active-handler demos,
+        # and matches how the allowlist itself has no concept of "the
+        # currently focused widget" either.
+        mut name = ""
+        if e.kind == ev_key():
+            name = find_handler_by_event(self.root, 0, wanted)
+        else:
+            name = hit_test(self.root, e.x, e.y, 0, wanted)
         if name == "":
             return false
 
@@ -133,6 +200,77 @@ extend Interpreter:
 
     pub def stats(self) -> str:
         return "Interpreter(renders=" + self.renders.to_str() + " handlers=" + len(self.handlers).to_str() + ") " + self.cache.stats()
+
+# Scales each channel down by pct% -- used for hover/pressed feedback
+# (Interpreter.paint). Integer math only (no float channel needed for a
+# handful of discrete darken levels), consistent with toolkit.types packing
+# color as a plain 0xRRGGBB int rather than a class.
+def darken_color(color: int, pct: int) -> int:
+    mut r = red_of(color) * (100 - pct) / 100
+    mut g = green_of(color) * (100 - pct) / 100
+    mut b = blue_of(color) * (100 - pct) / 100
+    return rgb(r, g, b)
+
+# A rounded rect, built from three plain fills (the straight edges) and four
+# per-pixel quarter-circles (the corners) -- Canvas has no fill-rounded-rect
+# or circle primitive (see Interpreter.paint's comment for why: fill_rect/
+# set_pixel only, so every backend -- hosted, SDL2, Cortex-M framebuffer,
+# UEFI GOP -- stays this simple and gets rounded corners for free with no
+# backend-specific code). `radius<=0` (or too big for the box) clamps to a
+# plain fill_rect, so this is a strict superset of the old square-corner
+# behavior, not a separate cost every caller pays.
+pub def paint_rounded_rect(c: Canvas, x: int, y: int, w: int, h: int, radius: int, color: int) -> void:
+    if w <= 0:
+        return
+    if h <= 0:
+        return
+    mut r = radius
+    if r < 0:
+        r = 0
+    if r * 2 > w:
+        r = w / 2
+    if r * 2 > h:
+        r = h / 2
+    if r <= 0:
+        c.fill_rect(x, y, w, h, color)
+        return
+
+    c.fill_rect(x, y + r, w, h - r * 2, color)
+    c.fill_rect(x + r, y, w - r * 2, r, color)
+    c.fill_rect(x + r, y + h - r, w - r * 2, r, color)
+
+    paint_corner(c, x, y, r, color, true, true)
+    paint_corner(c, x + w - r, y, r, color, false, true)
+    paint_corner(c, x, y + h - r, r, color, true, false)
+    paint_corner(c, x + w - r, y + h - r, r, color, false, false)
+
+# Fills the quarter-circle within an r x r square anchored at (ax,ay) (the
+# square's top-left pixel, one of the four corner squares a rounded rect's
+# straight fills leave uncovered). `inner_right`/`inner_bottom` say which
+# edge of THIS square borders the box's already-filled straight interior
+# (true) vs. the box's own outer corner (false) -- that is where the circle
+# center sits, in local square coordinates: (r,r) if both true (top-left
+# corner of the box), (0,r)/(r,0)/(0,0) for the other three. A pixel near
+# the outer-corner side is farther from that center and gets rounded off;
+# a pixel near the inner side is within radius and stays filled, connecting
+# smoothly to the straight edges either side of it.
+def paint_corner(c: Canvas, ax: int, ay: int, r: int, color: int, inner_right: bool, inner_bottom: bool) -> void:
+    mut center_x = 0
+    if inner_right:
+        center_x = r
+    mut center_y = 0
+    if inner_bottom:
+        center_y = r
+    mut yy = 0
+    while yy < r:
+        mut xx = 0
+        while xx < r:
+            mut dx = xx - center_x
+            mut dy = yy - center_y
+            if dx * dx + dy * dy <= r * r:
+                c.set_pixel(ax + xx, ay + yy, color)
+            xx = xx + 1
+        yy = yy + 1
 
 # Deepest-first hit test: the innermost box containing the point that names a
 # handler wins, which is what makes a button inside a panel behave.
@@ -164,6 +302,25 @@ pub def hit_test(box: LayoutBox, x: int, y: int, depth: int, wanted_event: str) 
     if box.event_name != wanted_event:
         return ""
     return box.handler
+
+# Position-free counterpart to hit_test: the first node anywhere in the tree
+# (depth-first, pre-order) whose event_name matches wins -- used for event
+# kinds like key input that have no (x,y) to test against. Same depth cap and
+# free-function-not-method shape as hit_test, for the same reason (see its
+# comment): a private recursive method returning str hangs under
+# --freestanding on Cortex-M.
+pub def find_handler_by_event(box: LayoutBox, depth: int, wanted_event: str) -> str:
+    if depth > max_depth():
+        return ""
+    if box.event_name == wanted_event:
+        return box.handler
+    mut i = 0
+    while i < len(box.children):
+        mut r = find_handler_by_event(box.children[i], depth + 1, wanted_event)
+        if r != "":
+            return r
+        i = i + 1
+    return ""
 
 # Register a host handler under the name UI content may reference.
 #

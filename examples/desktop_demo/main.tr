@@ -15,8 +15,9 @@
 from toolkit.types import Event, EventHandler
 from toolkit.ui.parser import UiParser
 from toolkit.ui.interp import Interpreter, render_to, register_handler
-from toolkit.render.desktop.sdl_canvas import SdlCanvas, poll_event, last_click
+from toolkit.render.desktop.sdl_canvas import SdlCanvas, poll_event, last_click, last_key, mouse_state
 from toolkit.render.desktop.sdl_bindings import SDL_Delay
+from toolkit.ui.textinput import TextInput
 
 pub class OkHandler implements EventHandler:
     pub label: str
@@ -30,9 +31,21 @@ extend OkHandler:
     pub def handle(self, e: Event) -> void:
         print("  [host] " + self.label + " fired at (" + e.x.to_str() + "," + e.y.to_str() + ")")
 
+pub class KeyHandler implements EventHandler:
+    pub tag: int
+
+extend KeyHandler:
+    pub def init() -> KeyHandler:
+        mut h = KeyHandler()
+        h.tag = 0
+        return h
+
+    pub def handle(self, e: Event) -> void:
+        print("  [host] key pressed, code=" + e.code.to_str())
+
 def main():
-    mut w = 320
-    mut h = 240
+    mut w = 420
+    mut h = 400
     mut canvas = SdlCanvas.open("Tauraro UI Toolkit -- desktop_demo", w, h)
     if not canvas.ok():
         print("failed to open an SDL window/renderer")
@@ -41,16 +54,54 @@ def main():
     mut it = Interpreter.init()
     mut ok = OkHandler.init("on_ok")
     mut cancel = OkHandler.init("on_cancel")
+    mut reset = OkHandler.init("on_reset")
+    mut key = KeyHandler.init()
     register_handler(it, "on_ok", ok)
     register_handler(it, "on_cancel", cancel)
+    register_handler(it, "on_reset", reset)
+    register_handler(it, "on_key", key)
 
-    mut src = "<panel \"flex-col p-4 gap-3 bg-slate\">\n  <text \"text-white\">TAURARO ON A REAL WINDOW</text>\n  <panel \"flex-row gap-3 h-90\">\n    <panel \"bg-red grow\" />\n    <panel \"bg-green grow\" />\n    <panel \"bg-blue w-60\" />\n  </panel>\n  <panel \"flex-row gap-3 h-40 p-3 bg-steel\">\n    <button \"bg-amber grow\" @on_click(on_ok)>\n      <text \"text-black\">OK</text>\n    </button>\n    <button \"bg-violet grow\" @on_click(on_cancel)>\n      <text \"text-white\">CANCEL</text>\n    </button>\n  </panel>\n</panel>\n"
+    # A deeper "dashboard" layout than the original 3-panel strip: a header
+    # bar, a 2x2 stat grid (flex-col of flex-rows -- the toolkit has no grid
+    # primitive, see toolkit/ui/style.tr's fixed 8-field Style; nesting
+    # flex-col/flex-row is the only way to get a grid shape), and a 3-button
+    # footer, still entirely within the existing panel/text/button + 8-field
+    # style vocabulary (max_depth()=64, this uses about 5).
+    #
+    # `@on_key(...)` on the root panel: key dispatch is a tree scan for the
+    # first matching event_name (toolkit.ui.interp.find_handler_by_event), not
+    # a hit-test, so where in the tree it sits doesn't matter -- it fires on
+    # ANY keypress while the window has focus, not just when the root is
+    # "clicked". See toolkit/types.tr's event_name_for_kind for why this now
+    # dispatches at all (ev_key() had no name mapping until 2026-09-04).
+    # Native-like chrome (2026-09-04): `border-<color>`, `bw-<px>`,
+    # `radius-<px>` are new Style tokens (toolkit/ui/style.tr) painted via
+    # paint_rounded_rect (toolkit/ui/interp.tr) -- rounded corners + a visible
+    # outline on the buttons and header/grid panels, instead of flat squares.
+    # Buttons also darken on hover/press (Interpreter.hover_x/hover_y/pressed,
+    # set from mouse_state() in the loop below) -- both effects apply through
+    # Canvas's existing fill_rect/set_pixel only, so hosted/SDL2/bare-metal/
+    # UEFI all get them with no backend-specific code.
+    mut src = "<panel \"flex-col p-4 gap-3 bg-slate\" @on_key(on_key)>\n  <panel \"flex-row gap-2 h-24 p-2 bg-steel border-mist bw-1 radius-6\">\n    <panel \"bg-amber w-24 radius-4\" />\n    <text \"text-white\">TAURARO DASHBOARD</text>\n  </panel>\n  <panel \"flex-col gap-2 h-140\">\n    <panel \"flex-row gap-2 grow\">\n      <panel \"bg-red grow radius-8\" />\n      <panel \"bg-green grow radius-8\" />\n    </panel>\n    <panel \"flex-row gap-2 grow\">\n      <panel \"bg-blue grow radius-8\" />\n      <panel \"bg-violet grow radius-8\" />\n    </panel>\n  </panel>\n  <panel \"flex-row gap-3 h-40 p-3 bg-steel\">\n    <button \"bg-amber grow border-white bw-2 radius-8\" @on_click(on_ok)>\n      <text \"text-black\">OK</text>\n    </button>\n    <button \"bg-mist grow border-white bw-2 radius-8\" @on_click(on_reset)>\n      <text \"text-black\">RESET</text>\n    </button>\n    <button \"bg-red w-70 border-white bw-2 radius-8\" @on_click(on_cancel)>\n      <text \"text-white\">CANCEL</text>\n    </button>\n  </panel>\n</panel>\n"
 
     mut p = UiParser.init()
     mut tree = p.parse(src)
     p.report()
 
-    print("window open -- click OK/CANCEL, close the window to quit")
+    # A real editable text field (toolkit/ui/textinput.tr, 2026-09-04) -- NOT
+    # part of the markup tree above (see that file's header comment for why:
+    # the tree is rebuilt from a static string every render() call, with
+    # nowhere for "text that changes every keystroke" to live). Painted at a
+    # fixed rect in the extra space below the button row, the same "host
+    # draws the dynamic part itself, alongside render_to()" pattern as
+    # examples/uefi_demo/render_interactive.tr's click-counter squares.
+    mut fx = 20
+    mut fy = 350
+    mut fw = 380
+    mut fh = 36
+    mut name_field = TextInput.init(24)
+
+    print("window open -- click OK/CANCEL, click the box and type, close the window to quit")
 
     mut running = true
     while running:
@@ -66,11 +117,24 @@ def main():
                 running = false
                 draining = false
             elif code == 2:
-                it.dispatch(last_click())
+                mut clk = last_click()
+                name_field.click_inside(clk.x, clk.y, fx, fy, fw, fh)
+                it.dispatch(clk)
+            elif code == 3:
+                mut ke = last_key()
+                name_field.handle_key(ke.code)
+                it.dispatch(ke)
 
         if running:
+            mut mx, my, mdown = mouse_state()
+            it.hover_x = mx
+            it.hover_y = my
+            it.pressed = mdown
+            name_field.tick()
+
             canvas.clear(0x0B1120)
             render_to(it, tree, canvas)
+            name_field.paint(canvas, fx, fy, fw, fh)
             canvas.present()
             unsafe: SDL_Delay(16 as Uint32)
 
