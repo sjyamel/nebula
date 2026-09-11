@@ -22,6 +22,15 @@
 from io.file import File
 from string.str import Str
 
+# One `name:path` pair from an `images = ...` line -- `name` becomes the
+# baked module's function prefix (`<name>_w()`/`_h()`/`_pixels()`, see
+# scripts/bake-image.ps1) AND the `src-<name>` token an `<image>` tag
+# selects it by; `path` is where to find the source PNG/JPG, relative to
+# the project root, same as every other path in nebula.conf.
+pub class ImageEntry:
+    pub name: str
+    pub path: str
+
 pub class Config:
     pub name:     str
     pub width:    int
@@ -38,6 +47,10 @@ pub class Config:
     # useful for a kiosk-style app that wants a specific canvas size
     # regardless of the browser window). See cli/nebula.tr's host_page().
     pub fixed_size: bool
+    # `images = logo:assets/logo.png, hero:assets/hero.png` -- name:path
+    # pairs, comma-separated, the same shape `pages = a, b` already parses.
+    # See ImageEntry's own comment.
+    pub images:   List[ImageEntry]
     pub ok:       bool
     pub err:      str
 
@@ -51,6 +64,7 @@ extend Config:
         c.pages = ["home"]
         c.bg = "#0F172A"
         c.fixed_size = false
+        c.images = []
         c.ok = true
         c.err = ""
         return c
@@ -109,6 +123,22 @@ def apply_line(c: Config, line: str) -> void:
         c.bg = val
     elif key == "fixed_size":
         c.fixed_size = val == "true"
+    elif key == "images":
+        mut parts2 = Str.split(val, ",")
+        mut entries: List[ImageEntry] = []
+        mut i2 = 0
+        while i2 < len(parts2):
+            mut pair = Str.trim(parts2[i2])
+            if pair != "":
+                mut colon = Str.index_of(pair, ":")
+                if colon > 0:
+                    mut e = ImageEntry()
+                    e.name = Str.trim(Str.slice(pair, 0, colon))
+                    e.path = Str.trim(Str.slice(pair, colon + 1, Str.len(pair)))
+                    if e.name != "" and e.path != "":
+                        entries.append(e)
+            i2 = i2 + 1
+        c.images = entries
 
 pub def load_config(path: str) -> Config:
     mut c = Config.defaults()

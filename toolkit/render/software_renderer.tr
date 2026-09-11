@@ -20,7 +20,7 @@
 from toolkit.render.canvas import Canvas
 from toolkit.render.renderer import Renderer
 from toolkit.text.font import Font
-from toolkit.ui.interp import paint_rounded_rect_aa, paint_rounded_box_aa, fill_circle_aa, fill_circle_ring_aa, draw_text, paint_gradient_rect_aa, paint_arc_ring_aa
+from toolkit.ui.interp import paint_rounded_rect_aa, paint_rounded_box_aa, fill_circle_aa, fill_circle_ring_aa, draw_text, paint_gradient_rect_aa, paint_arc_ring_aa, paint_image
 
 pub class SoftwareRenderer implements Renderer:
     _unused: int
@@ -51,6 +51,9 @@ extend SoftwareRenderer:
 
     pub def arc_ring(self, c: Canvas, cx: int, cy: int, r: int, ring_w: int, start_deg: int, sweep_deg: int, active: int, track: int, ambient: int) -> void:
         paint_arc_ring_aa(c, cx, cy, r, ring_w, start_deg, sweep_deg, active, track, ambient)
+
+    pub def image(self, c: Canvas, x: int, y: int, w: int, h: int, pixels: List[u8]) -> void:
+        paint_image(c, x, y, w, h, pixels)
 
 # A real compiler gap, found wiring this up: assigning a concrete class
 # value directly to a field declared with an INTERFACE type

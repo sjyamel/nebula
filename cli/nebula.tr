@@ -187,11 +187,67 @@ def clean_build_dir() -> void:
 def launch(path: str) -> str:
     return "powershell -NoProfile -Command \"& '" + path + "'\""
 
+# The directory nebula.exe itself was invoked from, so a resource that
+# ships ALONGSIDE it (scripts/bake-image.ps1) can be found regardless of
+# the CALLER's own current directory (an app being built typically lives
+# outside this repo entirely). `_tr_get_arg(0)` is argv[0] -- how it was
+# actually invoked, which is a real path (relative or absolute) whenever
+# invoked as `nebula.exe`/`./nebula.exe`/a full path, though not when
+# resolved bare through PATH (no separator in argv[0] at all; falls back
+# to "." -- the existing CWD-relative scripts/... calls this doesn't touch
+# yet have exactly that same assumption already). Scans for the LAST `/`
+# OR `\` by codepoint rather than a string literal search, because a
+# literal backslash cannot currently be written in a Tauraro string at all
+# (bugs.txt #8, the same limitation launch()'s own comment works around).
+def exe_dir() -> str:
+    mut p = _tr_get_arg(0)
+    mut n = Str.len(p)
+    mut cut = 0 - 1
+    mut i = 0
+    while i < n:
+        mut c = Str.char_at(p, i)
+        if c == 47 or c == 92:
+            cut = i
+        i = i + 1
+    if cut <= 0:
+        return "."
+    return Str.slice(p, 0, cut)
+
 def run_cmd(label: str, cmd: str) -> bool:
     mut rc = Process.system(cmd)
     if rc != 0:
         fail(label + " failed (exit " + rc.to_str() + ")")
         return false
+    return true
+
+# nebula1.0 Phase 4: bakes every `images = name:path, ...` entry (see
+# ImageEntry's own comment in cli/config.tr) into `nebula_assets/
+# image_<name>.tr` via scripts/bake-image.ps1 -- BEFORE emit_entry() runs,
+# since cli/codegen.tr's generate() needs to know the image list to emit
+# the right imports/AppImagePainter class, and that file mirrors
+# whatever's actually on disk rather than baking on demand at import time
+# (freestanding targets have no filesystem to bake FROM at runtime anyway,
+# same reasoning as markup being embedded as a string constant -- see that
+# file's own header). A no-op (returns true immediately) for the common
+# case of an app with no `images` line at all.
+def bake_images(cfg: Config) -> bool:
+    if len(cfg.images) == 0:
+        return true
+    mut out = Dir.init("nebula_assets")
+    if not out.exists():
+        out.make()
+    mut i = 0
+    while i < len(cfg.images):
+        mut e = cfg.images[i]
+        mut outTr = "nebula_assets/image_" + e.name + ".tr"
+        # 128x128 cap: a baked image is compiled-in SOURCE (see
+        # scripts/bake-image.ps1's own header on why), so an accidentally
+        # huge source photo must not turn into a multi-megabyte .tr file --
+        # plenty for the icon/logo-sized assets this is meant for.
+        mut cmd = "powershell -NoProfile -File " + exe_dir() + "/scripts/bake-image.ps1 -ImagePath \"" + e.path + "\" -Name " + e.name + " -OutTr " + outTr + " -MaxW 128 -MaxH 128"
+        if not run_cmd("bake-image (" + e.name + ")", cmd):
+            return false
+        i = i + 1
     return true
 
 # Hosted and desktop compile straight to a native exe. Desktop additionally
@@ -372,6 +428,21 @@ def host_page(cfg: Config) -> str:
     s = s + "      ctx.beginPath(); ctx.arc(cx, cy, rad, a0, a1, false); ctx.stroke();\n"
     s = s + "    }\n"
     s = s + "  },\n"
+    # nebula1.0 Phase 4: `ImageData`/`putImageData` is the natural fit for
+    # RGBA pixel data (its own native format, no conversion) -- but
+    # putImageData ignores the canvas's own transform (the dpr scale set up
+    # by applyCanvasSize), so it's drawn through a same-size OFFSCREEN
+    # canvas first and blitted via ctx.drawImage(...), which DOES respect
+    # the transform -- otherwise a baked image would land at the wrong
+    # physical pixel on any non-1x display.
+    s = s + "  js_image_blit(x, y, w, h, ptr, len) {\n"
+    s = s + "    const bytes = new Uint8ClampedArray(mem.buffer, ptr, len).slice();\n"
+    s = s + "    const imgData = new ImageData(bytes, w, h);\n"
+    s = s + "    const off = document.createElement('canvas');\n"
+    s = s + "    off.width = w; off.height = h;\n"
+    s = s + "    off.getContext('2d').putImageData(imgData, 0, 0);\n"
+    s = s + "    ctx.drawImage(off, x, y, w, h);\n"
+    s = s + "  },\n"
     s = s + "}};\n\n"
     s = s + "const { instance } = await WebAssembly.instantiateStreaming(fetch('nebula.wasm'), importObj);\n"
     s = s + "const ex = instance.exports;\n"
@@ -401,9 +472,16 @@ def host_page(cfg: Config) -> str:
     s = s + "  if (NAV_KEYS.has(e.key)) { key = KEY_MAP[e.key]; e.preventDefault(); }\n"
     s = s + "  else if (e.key.length === 1) { key = e.key.charCodeAt(0); }\n"
     s = s + "});\n\n"
+    s = s + "let lastCursor = -1;\n"
     s = s + "function frame() {\n"
     s = s + "  ex.nebula_frame(BigInt(W), BigInt(H), BigInt(mx), BigInt(my), BigInt(buttons), BigInt(key), BigInt(wheel));\n"
     s = s + "  key = 0; wheel = 0;\n"
+    # A single <canvas> has no per-region native cursor -- the wasm side
+    # tells us what's under (mx,my) each frame (1 = I-beam over a
+    # `<textinput>`, 0 = default) and we set the CSS cursor to match. Only
+    # touches the DOM on an actual change, not every frame.
+    s = s + "  const ck = Number(ex.nebula_cursor_kind());\n"
+    s = s + "  if (ck !== lastCursor) { cv.style.cursor = ck === 1 ? 'text' : 'default'; lastCursor = ck; }\n"
     s = s + "  hud.textContent = ex.nebula_frames() + ' frames - arena ' + ex.nebula_arena_used() + ' bytes';\n"
     s = s + "  requestAnimationFrame(frame);\n"
     s = s + "}\n"
@@ -415,6 +493,8 @@ def host_page(cfg: Config) -> str:
 
 def do_build(cfg: Config, target: int) -> bool:
     say("building " + cfg.name + " for " + target_name(target) + "...")
+    if not bake_images(cfg):
+        return false
     mut entry = emit_entry(cfg, target)
     if entry == "":
         return false

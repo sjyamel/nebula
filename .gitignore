@@ -5,6 +5,7 @@ build-bare*/
 build-uefi*/
 build-desktop*/
 build-web*/
+buil*/
 *.elf
 *.ld
 *.efi
@@ -20,6 +21,9 @@ SDL2.dll
 # and their MSVC debug-symbol byproduct.
 *.exe
 *.pdb
+*.png
+*.jpg
+*.jepg
 main
 hello
 smoke_*

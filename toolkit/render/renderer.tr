@@ -41,3 +41,8 @@ pub interface Renderer:
     # default (software) implementation these two are modeled on.
     def gradient_rect(self, c: Canvas, x: int, y: int, w: int, h: int, radius: int, color_a: int, color_b: int, dir: int, ambient: int) -> void
     def arc_ring(self, c: Canvas, cx: int, cy: int, r: int, ring_w: int, start_deg: int, sweep_deg: int, active: int, track: int, ambient: int) -> void
+    # nebula1.0 Phase 4: a plain RGBA blit -- `pixels` row-major, 4
+    # bytes/pixel, w*h*4 long, exactly scripts/bake-image.ps1's own
+    # `<name>_pixels()` output shape (see toolkit.render.scene's cmd_image()
+    # for the rest of that story).
+    def image(self, c: Canvas, x: int, y: int, w: int, h: int, pixels: List[u8]) -> void

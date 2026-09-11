@@ -154,6 +154,11 @@
         </panel>
       </panel>
 
+      <panel "flex-row items-center gap-3 bg-white rounded-xl p-2 shadow">
+        <image "src-hero w-32 h-24 rounded" />
+        <text "text-slate-500">baked-image test</text>
+      </panel>
+
     </panel>
   </panel>
 </panel>

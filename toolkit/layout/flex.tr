@@ -19,7 +19,7 @@
 
 from toolkit.ui.ast import UiNode, read_node, max_depth
 from toolkit.ui.style import Style, StyleCache, dir_col, dir_grid, unset
-from toolkit.ui.widget_tags import tag_checkbox, tag_switch, tag_radio, tag_slider, tag_progress, tag_dial, tag_icon, tag_textinput
+from toolkit.ui.widget_tags import tag_checkbox, tag_switch, tag_radio, tag_slider, tag_progress, tag_dial, tag_icon, tag_textinput, tag_image
 from toolkit.ui.style import align_stretch, align_center, align_end, align_between
 from toolkit.ui.style import align_around, align_evenly
 from toolkit.ui.style import font_size_sm, font_size_lg
@@ -252,6 +252,13 @@ def widget_intrinsic_w(tag: str) -> int:
     # function's own header comment.
     if tag == tag_dial(): return 96
     if tag == tag_icon(): return 24
+    # A baked image's REAL size lives in its own generated `<name>_w()`/
+    # `_h()` (see toolkit.ui.widget_tags' tag_image() comment) which this
+    # file has no access to -- an author almost always sizes `<image>`
+    # explicitly with `w-N h-N` anyway (to control on-screen scale, not
+    # just to satisfy layout), same as `icon` already expects; this is only
+    # the no-token fallback, matching icon's own default.
+    if tag == tag_image(): return 48
     return 0
 
 def widget_intrinsic_h(tag: str) -> int:
@@ -266,6 +273,7 @@ def widget_intrinsic_h(tag: str) -> int:
     # "leave WIDTH at 0" reasoning as slider/progress above -- an author
     # sizes it with `grow`/`w-full` like anything else.
     if tag == tag_textinput(): return 36
+    if tag == tag_image(): return 48
     return 0
 
 def is_measured_widget_tag(tag: str) -> bool:
@@ -277,6 +285,7 @@ def is_measured_widget_tag(tag: str) -> bool:
     if tag == tag_dial(): return true
     if tag == tag_icon(): return true
     if tag == tag_textinput(): return true
+    if tag == tag_image(): return true
     return false
 
 pub def measure(box: LayoutBox) -> void:

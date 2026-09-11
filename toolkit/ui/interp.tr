@@ -25,13 +25,24 @@ from toolkit.text.font import Font, Fonts
 from string.str import Str
 from math.int import Math
 from toolkit.render.gamma import srgb_to_linear, linear_to_srgb
-from core.string import StringBuilder
+from core.alloc import alloc
 
 # One entry in the handler allowlist: a name UI content may reference, and the
 # host object it resolves to.
 pub class HandlerSlot:
     pub name: str
     pub h:    EventHandler
+
+# nebula1.0 Phase 4 (baked images): a baked image's pixel data is inherently
+# per-app (see scripts/bake-image.ps1's own header) -- this toolkit file
+# cannot import a specific app's generated `<name>_pixels()` functions
+# without creating a layering cycle (the same reason handlers go through
+# EventHandler/register_handler rather than this file importing app code
+# directly). An app's generated main.tr implements this interface once
+# (one if/elif over every baked image's `name`) and registers it via
+# register_image_painter(); emit_widget's tag_image() branch calls it.
+pub interface ImagePainter:
+    def paint(self, scene: Scene, x: int, y: int, w: int, h: int, ambient: int, name: str) -> void
 
 pub class Interpreter:
     pub cache:    StyleCache
@@ -112,6 +123,13 @@ pub class Interpreter:
     # textinput this names, instead of the old global scan, whenever it's
     # non-empty).
     pub focused_key: str
+    # See ImagePainter's own comment just above. `has_image_painter` guards
+    # `image_painter` the same way `has_root`/`has_last_scene` guard THEIR
+    # fields -- an app that bakes no images never calls
+    # register_image_painter(), and `<image>` simply paints nothing rather
+    # than crashing on an unset interface field.
+    pub image_painter: ImagePainter
+    pub has_image_painter: bool
 
 extend Interpreter:
     pub def init() -> Interpreter:
@@ -133,6 +151,7 @@ extend Interpreter:
         it.renderer = default_renderer()
         it.text_state = {}
         it.focused_key = ""
+        it.has_image_painter = false
         return it
 
     # Proposal v4 step F: read a node's persisted state, or `default` if
@@ -752,6 +771,19 @@ extend Interpreter:
             paint_icon(scene, box, box.style.fg, ambient_bg)
             return ambient_bg
 
+        # nebula1.0 Phase 4 (baked images): `src-<name>` (parsed into
+        # box.w_name, same field icon-<name> already populates) selects
+        # which baked image to paint -- dispatched through the app's own
+        # registered ImagePainter (see its own comment) since the pixel
+        # data is per-app, not toolkit-wide. Paints nothing (not a crash)
+        # for an app that baked no images, or a name it doesn't recognize --
+        # same "degrades safely" contract the rest of this file's optional
+        # hooks already have.
+        if box.tag == tag_image():
+            if self.has_image_painter:
+                self.image_painter.paint(scene, box.x, box.y, box.w, box.h, ambient_bg, box.w_name)
+            return ambient_bg
+
         # nebula1.0 Phase 3: a real text-input field -- its own bg/border
         # already painted by emit()'s ordinary Style handling above (a
         # `<textinput>` carries `bg-*`/`border-*`/`rounded-*` exactly like
@@ -766,17 +798,54 @@ extend Interpreter:
         if box.tag == tag_textinput():
             mut content = self.text_get(box.node_key, "")
             mut gh = glyph_h(box.style.font_size)
+            mut gw = glyph_w(box.style.font_size)
             mut ty = box.y + (box.h - gh) / 2
             mut tx = box.x + 10
+            mut n = Str.len(content)
+            # `#cursor`/`#scroll` are prewarmed by prewarm_state (see its own
+            # tag_textinput() branch) precisely so the Dict-growth from their
+            # FIRST-ever write happens before arena_mark(), not lazily here
+            # mid-frame -- a real, reproduced hang was traced to exactly that
+            # (hit_test_widget's cursor-on-focus write was the only place
+            # that ever created the "#cursor" entry, always well after
+            # arena_mark(); confirmed via a direct wasm-export repro that
+            # narrowed it to that single state_set call before this comment
+            # was written).
+            mut cursor = self.state_get(box.node_key + "#cursor", n)
+            if cursor < 0:
+                cursor = 0
+            if cursor > n:
+                cursor = n
+            # Scroll-into-view: keep the caret inside [tx, tx+avail_w] by
+            # shifting the whole painted line left/right, clamped so it
+            # never scrolls PAST either end -- same "clamp an offset so a
+            # computed position stays in bounds" shape dial's own click
+            # math already uses elsewhere in this file.
+            mut caret_local_x = cursor * gw
+            mut avail_w = box.w - 20
+            if avail_w < 0:
+                avail_w = 0
+            mut scroll_key = box.node_key + "#scroll"
+            mut scroll = self.state_get(scroll_key, 0)
+            if caret_local_x - scroll > avail_w:
+                scroll = caret_local_x - avail_w
+            if caret_local_x - scroll < 0:
+                scroll = caret_local_x
+            if scroll < 0:
+                scroll = 0
+            self.state_set(scroll_key, scroll)
+
+            scene.add(Cmd.clip_push(box.x, box.y, box.w, box.h))
             if content != "":
-                scene.add(Cmd.label(tx, ty, content, box.style.fg, ambient_bg, box.style.font_size))
+                scene.add(Cmd.label(tx - scroll, ty, content, box.style.fg, ambient_bg, box.style.font_size))
             elif box.w_placeholder != "":
                 scene.add(Cmd.label(tx, ty, box.w_placeholder, 0x94A3B8, ambient_bg, box.style.font_size))
             if box.node_key == self.focused_key:
                 mut blink_on = (self.renders / 30) % 2 == 0
                 if blink_on:
-                    mut caret_x = tx + Str.len(content) * glyph_w(box.style.font_size)
+                    mut caret_x = tx + caret_local_x - scroll
                     scene.add(Cmd.rounded_rect(caret_x, ty, 2, gh, 0, box.style.fg, ambient_bg))
+            scene.add(Cmd.clip_pop())
             return ambient_bg
 
         return ambient_bg
@@ -871,36 +940,121 @@ extend Interpreter:
     pub def stats(self) -> str:
         return "Interpreter(renders=" + self.renders.to_str() + " handlers=" + len(self.handlers).to_str() + ") " + self.cache.stats()
 
-# nebula1.0 Phase 3: mutates the FOCUSED textinput's text_state entry for
-# one key event -- see dispatch()'s own comment for why this replaces the
-# global @on_key scan whenever something is focused. A deliberately simple
-# v1: append-only at the end / backspace-removes-the-last-char, no cursor
-# position tracking (so Home/End/arrows/Delete are no-ops here) -- matches
-# a search-box's actual needs without the real complexity a full text
-# editor's cursor+selection model would add (see examples/web_ide's own
-# hand-rolled Buffer class for what that looks like once it's needed).
-# Enter blurs (confirms the input, the same UX a browser's own search box
-# already has), not a widget-config token; if per-input Enter behavior
-# beyond "stop editing" is ever needed, `@on_key` still fires normally
-# once focus clears.
+    # Host-cursor hint for the CURRENT hover_x/hover_y -- see cursor_kind_at's
+    # own comment. Exported per-target by codegen.tr so the host page can set
+    # its native mouse-cursor shape (an I-beam over a `<textinput>`) each frame.
+    pub def hover_cursor_kind(self) -> int:
+        if not self.has_root:
+            return 0
+        return cursor_kind_at(self.root, self.hover_x, self.hover_y, 0)
+
+# A `<textinput>`'s content buffer capacity -- see prewarm_state's
+# tag_textinput() branch for why it's a FIXED buffer, allocated exactly
+# once, rather than a fresh `str` built on every keystroke.
+def textinput_buf_cap() -> int:
+    return 256
+
+# Shifts buf[from_i+1 .. to_i] left by one into buf[from_i .. to_i-1] --
+# closes a one-character gap at `from_i` (the removed character). Walking
+# forward (not backward) is safe here because each write only ever reads
+# an index it hasn't written yet.
+def str_shift_left(buf: Pointer[char], from_i: int, to_i: int) -> void:
+    mut i = from_i
+    while i < to_i:
+        unsafe: buf.offset(i).write(buf.offset(i + 1).read())
+        i = i + 1
+
+# Shifts buf[from_i .. to_i-1] right by one into buf[from_i+1 .. to_i] --
+# opens a one-character gap AT `from_i` for an about-to-be-inserted
+# character. Walking backward from `to_i` is required here (the mirror of
+# str_shift_left) so each write's source hasn't been overwritten yet.
+def str_shift_right(buf: Pointer[char], from_i: int, to_i: int) -> void:
+    mut i = to_i
+    while i > from_i:
+        unsafe: buf.offset(i).write(buf.offset(i - 1).read())
+        i = i - 1
+
+# nebula1.0 Phase 3: mutates the FOCUSED textinput's content IN PLACE, byte
+# by byte, inside a FIXED buffer allocated once by prewarm_state (see that
+# function's own comment) -- see dispatch()'s own comment for why this
+# replaces the global @on_key scan whenever something is focused. Insert/
+# delete happen at a real cursor index (`node_key + "#cursor"`, an int in
+# the SAME state Dict switch/dial already use -- no new storage). Nav codes
+# match the KEY_MAP contract cli/nebula.tr's host JS already emits: 1001/
+# 1002 Left/Right, 1005/1006 Home/End, 1009 Delete-forward. Enter blurs
+# (confirms the input, the same UX a browser's own search box already
+# has), not a widget-config token; if per-input Enter behavior beyond
+# "stop editing" is ever needed, `@on_key` still fires normally once focus
+# clears.
+#
+# v1 of this (since superseded) built a brand-new `str` via StringBuilder/
+# Str.slice on every keystroke and stored it into text_state -- confirmed
+# via direct wasm-export instrumentation to reproducibly corrupt typed text
+# (e.g. "the quick brown fox..." coming back with random bytes changed
+# mid-string). Root cause: `Interpreter.dispatch()` (which is what calls
+# this function) necessarily runs BEFORE this frame's
+# `arena_release(_frame_mark)` / `arena_mark()` pair -- it hit-tests
+# against the PREVIOUS frame's tree, which must still be alive when
+# dispatch runs, so the release can't move earlier. Any fresh allocation a
+# keystroke makes therefore lands in the exact region that release call
+# reclaims moments later, which THIS frame's own fresh LayoutBox tree then
+# silently overwrites before paint ever reads the string back. A single
+# bump-stack arena has no way to protect "freshly allocated during
+# dispatch" while also reclaiming "the old tree from last frame" in one
+# release call -- so editing now never allocates at all; it only ever
+# mutates bytes already sitting in a buffer that was allocated back during
+# the pre-mark warm-up phase, the same "grow everything before the first
+# mark, only mutate in place after that" invariant prewarm_widget_state
+# already established for the int-valued state Dict.
 def edit_text_state(it: Interpreter, code: int) -> void:
     mut key = it.focused_key
     if key == "":
         return
     mut cur = it.text_get(key, "")
+    mut buf = cur as Pointer[char]
+    mut n = Str.len(cur)
+    mut cursor_key = key + "#cursor"
+    mut cursor = it.state_get(cursor_key, n)
+    if cursor < 0:
+        cursor = 0
+    if cursor > n:
+        cursor = n
     if code == 13:
         it.focused_key = ""
         return
+    if code == 1001:
+        if cursor > 0:
+            cursor = cursor - 1
+        it.state_set(cursor_key, cursor)
+        return
+    if code == 1002:
+        if cursor < n:
+            cursor = cursor + 1
+        it.state_set(cursor_key, cursor)
+        return
+    if code == 1005:
+        it.state_set(cursor_key, 0)
+        return
+    if code == 1006:
+        it.state_set(cursor_key, n)
+        return
+    if code == 1009:
+        if cursor < n:
+            str_shift_left(buf, cursor, n - 1)
+            unsafe: buf.offset(n - 1).write('\0')
+        return
     if code == 8:
-        mut n = Str.len(cur)
-        if n > 0:
-            it.text_set(key, Str.slice(cur, 0, n - 1))
+        if cursor > 0:
+            str_shift_left(buf, cursor - 1, n - 1)
+            unsafe: buf.offset(n - 1).write('\0')
+            it.state_set(cursor_key, cursor - 1)
         return
     if code >= 32 and code <= 126:
-        mut sb = StringBuilder.init(Str.len(cur) + 1)
-        sb.append(cur)
-        sb.append_char(code)
-        it.text_set(key, sb.to_owned())
+        if n < textinput_buf_cap() - 1:
+            str_shift_right(buf, cursor, n)
+            unsafe: buf.offset(cursor).write(code as char)
+            unsafe: buf.offset(n + 1).write('\0')
+            it.state_set(cursor_key, cursor + 1)
 
 # Scales each channel down by pct% -- used for hover/pressed feedback
 # (Interpreter.paint). Integer math only (no float channel needed for a
@@ -1713,6 +1867,31 @@ def paint_gradient_strip(c: Canvas, sx: int, sy: int, sw: int, sh: int, local_x:
             c.fill_rect(sx + xx, sy, 1, sh, col)
             xx = xx + 1
 
+# nebula1.0 Phase 4 (baked images): a plain per-pixel RGBA blit -- `pixels`
+# is scripts/bake-image.ps1's own row-major 4-bytes/pixel output. Pixels
+# below alpha 128 are skipped entirely (letting whatever's already painted
+# show through, e.g. a transparent PNG's background); everything else
+# paints fully opaque -- the same "flat layers, no real alpha blend"
+# precedent icon/gradient painting already established twice in this file,
+# rather than a genuine alpha-composite (no destination read-back on every
+# backend -- see toolkit.render.canvas's own header).
+pub def paint_image(c: Canvas, x: int, y: int, w: int, h: int, pixels: List[u8]) -> void:
+    if w <= 0 or h <= 0:
+        return
+    mut row = 0
+    while row < h:
+        mut col = 0
+        while col < w:
+            mut idx = (row * w + col) * 4
+            mut a = pixels[idx + 3] as int
+            if a >= 128:
+                mut rr = pixels[idx] as int
+                mut gg = pixels[idx + 1] as int
+                mut bb = pixels[idx + 2] as int
+                c.set_pixel(x + col, y + row, rgb(rr, gg, bb))
+            col = col + 1
+        row = row + 1
+
 pub def paint_gradient_rect_aa(c: Canvas, x: int, y: int, w: int, h: int, radius: int, color_a: int, color_b: int, dir: int, ambient: int) -> void:
     if w <= 0:
         return
@@ -1841,6 +2020,29 @@ pub def hit_test(box: LayoutBox, x: int, y: int, depth: int, wanted_event: str) 
     if box.event_name != wanted_event:
         return ""
     return box.handler
+
+# Host-cursor hint for whatever's under (x,y) -- 1 means "show an I-beam",
+# 0 means "show the ordinary pointer". A free function for the same reason
+# hit_test is one (see its own comment: a private recursive method
+# returning a non-void value hung under --freestanding on Cortex-M).
+# Deliberately hover-based, not focus-based: a real browser's text cursor
+# tracks the MOUSE, not which input currently has keyboard focus -- the
+# already-implemented blinking caret (emit_widget's tag_textinput() branch)
+# is the separate, focus-based indicator for that.
+pub def cursor_kind_at(box: LayoutBox, x: int, y: int, depth: int) -> int:
+    if depth > max_depth():
+        return 0
+    if not box.contains(x, y):
+        return 0
+    mut i = 0
+    while i < len(box.children):
+        mut k = cursor_kind_at(box.children[i], x, y, depth + 1)
+        if k != 0:
+            return k
+        i = i + 1
+    if box.tag == tag_textinput():
+        return 1
+    return 0
 
 # Position-free counterpart to hit_test: the first node anywhere in the tree
 # (depth-first, pre-order) whose event_name matches wins -- used for event
@@ -1974,8 +2176,26 @@ pub def hit_test_widget(it: Interpreter, root: LayoutBox, box: LayoutBox, x: int
         # textinput, type, click elsewhere, repeat for thousands of
         # frames) specifically to catch it if so.
         it.focused_key = box.node_key
+        # Should never fire -- prewarm_state's own tag_textinput() branch
+        # already allocates every textinput's buffer pre-mark -- but stays
+        # as a defensive fallback using the SAME allocation shape rather
+        # than a bare `""` (which edit_text_state's buffer-mutation code
+        # can't safely write through) in case a node is ever reached here
+        # without having gone through prewarm first.
         if not (box.node_key in it.text_state):
-            it.text_set(box.node_key, "")
+            mut buf: Pointer[char] = 0 as Pointer[char]
+            unsafe:
+                buf = alloc[char](textinput_buf_cap())
+                buf.offset(0).write('\0')
+            it.text_set(box.node_key, buf as str)
+        # A fresh click always starts the cursor at the end -- matches the
+        # old append-only behavior as the default, now a real movable
+        # position instead of an assumption baked into paint. Safe to
+        # state_set here (rather than only ever read) because prewarm_state
+        # already forced this exact key to exist before arena_mark() -- see
+        # emit_widget's tag_textinput() branch for the full story on why
+        # that matters.
+        it.state_set(box.node_key + "#cursor", Str.len(it.text_get(box.node_key, "")))
         return true
 
     return false
@@ -2061,7 +2281,29 @@ def prewarm_state(it: Interpreter, box: LayoutBox, depth: int) -> void:
         it.state_set(box.node_key, box.w_value)
     elif box.tag == tag_textinput():
         if not (box.node_key in it.text_state):
-            it.text_set(box.node_key, "")
+            # A FIXED buffer, allocated exactly once, right here, before
+            # arena_mark() -- everything typed into this node for the rest
+            # of the app's lifetime mutates these SAME bytes in place (see
+            # edit_text_state's own comment for the full story on why: a
+            # fresh `str` allocated during a live frame gets reclaimed and
+            # overwritten by that same frame's own render, corrupting typed
+            # text). `buf as str` is a BORROWED view (matches the existing
+            # `Pointer[char] as str` pattern std.sys.env's own get_var()
+            # uses) so the ARC system never tries to retain/release/free a
+            # buffer that must live for the app's whole lifetime.
+            mut buf: Pointer[char] = 0 as Pointer[char]
+            unsafe:
+                buf = alloc[char](textinput_buf_cap())
+                buf.offset(0).write('\0')
+            it.text_set(box.node_key, buf as str)
+        # Forces the FIRST write (and any Dict-growth it triggers) to
+        # happen here, pre-arena_mark() -- see emit_widget's tag_textinput()
+        # branch for why a lazy first state_set() of these keys (previously
+        # only ever written from hit_test_widget's on-focus branch, well
+        # after arena_mark()) reproducibly hung the app a few frames after
+        # the first click on ANY textinput.
+        it.state_set(box.node_key + "#cursor", 0)
+        it.state_set(box.node_key + "#scroll", 0)
     mut i = 0
     while i < len(box.children):
         prewarm_state(it, box.children[i], depth + 1)
@@ -2076,6 +2318,12 @@ def prewarm_state(it: Interpreter, box: LayoutBox, depth: int) -> void:
 # keyword, and emitting it mangles the symbol and loses the interface upcast.
 pub def register_handler(it: Interpreter, name: str, h: EventHandler) -> void:
     it.add_slot(name, h)
+
+# Same free-function-for-upcast reasoning as register_handler just above --
+# see ImagePainter's own comment for what this wires up and why.
+pub def register_image_painter(it: Interpreter, p: ImagePainter) -> void:
+    it.image_painter = p
+    it.has_image_painter = true
 
 # Render a tree to a concrete canvas without giving up ownership of it.
 #

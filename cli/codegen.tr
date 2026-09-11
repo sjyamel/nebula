@@ -176,6 +176,50 @@ def register_calls(pages: List[PageInfo], indent: str, var: str) -> str:
         i = i + 1
     return s
 
+# nebula1.0 Phase 4 (baked images): `nebula run/build` bakes each
+# `cfg.images` entry into `nebula_assets/image_<name>.tr` (see
+# cli/nebula.tr's bake_images()) BEFORE this file's generate() ever runs --
+# a plain, non-dotted-leading-char directory name on purpose, since
+# `.nebula` (a leading dot) cannot appear inside a dotted Tauraro import
+# path (`from .nebula.assets.x import y` doesn't parse the way `from
+# app.home.home import y` does). One `from nebula_assets.image_<name>
+# import <name>_w, <name>_h, <name>_pixels` per declared image.
+def image_imports(cfg: Config) -> str:
+    mut s = ""
+    mut i = 0
+    while i < len(cfg.images):
+        mut e = cfg.images[i]
+        s = s + "from nebula_assets.image_" + e.name + " import " + e.name + "_w, " + e.name + "_h, " + e.name + "_pixels\n"
+        i = i + 1
+    return s
+
+# The ImagePainter implementor every app with `images = ...` gets, generated
+# rather than hand-written for the same reason register_handler's callers
+# are generated: the SET of baked image names is per-app config, unknowable
+# to toolkit.ui.interp (see that file's own ImagePainter comment for why the
+# toolkit can't just import app code directly).
+def image_painter_class(cfg: Config) -> str:
+    if len(cfg.images) == 0:
+        return ""
+    mut s = "class AppImagePainter implements ImagePainter:\n"
+    s = s + "    _unused: int\n\n"
+    s = s + "extend AppImagePainter:\n"
+    s = s + "    pub def init() -> AppImagePainter:\n"
+    s = s + "        mut p = AppImagePainter()\n"
+    s = s + "        p._unused = 0\n"
+    s = s + "        return p\n\n"
+    s = s + "    pub def paint(self, scene: Scene, x: int, y: int, w: int, h: int, ambient: int, name: str) -> void:\n"
+    mut branch = "if"
+    mut i = 0
+    while i < len(cfg.images):
+        mut e = cfg.images[i]
+        s = s + "        " + branch + " name == \"" + e.name + "\":\n"
+        s = s + "            scene.add(Cmd.image(x, y, w, h, " + e.name + "_pixels(), ambient))\n"
+        branch = "elif"
+        i = i + 1
+    s = s + "\n"
+    return s
+
 # Emits `if router.current == "home": home_on_frame(...) \n elif ...` for
 # whichever pages define it. `args` is the parameter list already
 # comma-joined (canvas/w/h/mx/my/buttons/key/wheel -- the exact set a given
@@ -308,12 +352,15 @@ def gen_web(cfg: Config, pages: List[PageInfo]) -> str:
     mut s = banner(cfg, "web")
     s = s + "from toolkit.types import Event\n"
     s = s + "from toolkit.ui.parser import UiParser\n"
-    s = s + "from toolkit.ui.interp import Interpreter, render_to, prewarm_widget_state\n"
+    s = s + "from toolkit.ui.interp import Interpreter, render_to, prewarm_widget_state, ImagePainter, register_image_painter\n"
     s = s + "from toolkit.ui.router import Router\n"
+    s = s + "from toolkit.render.scene import Scene, Cmd\n"
     s = s + "from toolkit.render.web.canvas2d_renderer import Canvas2DCanvas, canvas2d_renderer_of\n"
     s = s + "from toolkit.render.renderer import Renderer\n"
     s = s + page_imports(cfg, pages)
+    s = s + image_imports(cfg)
     s = s + arena_hooks()
+    s = s + image_painter_class(cfg)
     s = s + "pub export def nebula_heap_init(base: Pointer[u8], size: usize) -> void:\n"
     s = s + "    arena_init(base, size)\n\n"
     # Scalars only: module-level initializers with an ALLOCATING right-hand
@@ -362,6 +409,8 @@ def gen_web(cfg: Config, pages: List[PageInfo]) -> str:
     s = s + "    _it = Interpreter.init()\n"
     s = s + "    _it.root_bg = " + hex_of(cfg.bg) + "\n"
     s = s + register_calls(pages, "    ", "_it")
+    if len(cfg.images) > 0:
+        s = s + "    register_image_painter(_it, AppImagePainter.init())\n"
     s = s + "    mut warm = Canvas2DCanvas.init(w, h)\n"
     s = s + "    _it.renderer = canvas2d_renderer_of(warm)\n"
     s = s + "    render_to(_it, router.page({}), warm)\n"
@@ -371,6 +420,11 @@ def gen_web(cfg: Config, pages: List[PageInfo]) -> str:
     s = s + "    return _frames\n\n"
     s = s + "pub export def nebula_arena_used() -> int:\n"
     s = s + "    return arena_used() as int\n\n"
+    # Host-cursor hint (1 = I-beam, 0 = default) -- the web host polls this
+    # once per frame and sets the canvas element's own CSS `cursor` style,
+    # since a single <canvas> has no per-region native cursor of its own.
+    s = s + "pub export def nebula_cursor_kind() -> int:\n"
+    s = s + "    return _it.hover_cursor_kind()\n\n"
     s = s + "pub export def nebula_frame(w: int, h: int, mx: int, my: int, buttons: int, key: int, wheel: int) -> void:\n"
     s = s + "    _frames = _frames + 1\n\n"
     # dispatch() hit-tests against Interpreter.root, which is the tree the

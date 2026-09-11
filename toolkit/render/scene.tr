@@ -87,6 +87,16 @@ pub def cmd_gradient_rect() -> int:
 pub def cmd_arc_ring() -> int:
     return 8
 
+# nebula1.0 Phase 4 (baked images): a plain RGBA blit -- x/y/w/h as usual,
+# `pixels` a NEW field (row-major RGBA, 4 bytes/pixel, exactly the shape
+# scripts/bake-image.ps1 emits) rather than reusing fill/stroke, since
+# there is no way to pack a whole pixel buffer into an int. See that
+# script's own header for why images are baked offline rather than decoded
+# on-device (same reasoning as the font atlas: no decoder in Tauraro's
+# stdlib, no filesystem on the freestanding tiers).
+pub def cmd_image() -> int:
+    return 9
+
 pub class Cmd:
     pub kind:     int
     pub x:        int
@@ -118,6 +128,10 @@ pub class Cmd:
     # `font_size_base()` there are two names for the same number, not two
     # different defaults.
     pub font_size: int
+    # Only meaningful for a cmd_image() command -- RGBA, row-major, 4
+    # bytes/pixel, w*h*4 long. Empty (the default) on every other command's
+    # factory below, where it is simply unused.
+    pub pixels: List[u8]
 
 extend Cmd:
     pub def rounded_rect(x: int, y: int, w: int, h: int, radius: int, fill: int, ambient: int) -> Cmd:
@@ -143,6 +157,7 @@ extend Cmd:
         c.text = ""
         c.alpha = alpha
         c.font_size = 1
+        c.pixels = []
         return c
 
     pub def rounded_box(x: int, y: int, w: int, h: int, radius: int, border_w: int, fill: int, stroke: int, ambient: int) -> Cmd:
@@ -160,6 +175,7 @@ extend Cmd:
         c.text = ""
         c.alpha = 255
         c.font_size = 1
+        c.pixels = []
         return c
 
     # `x`/`y` are the circle's CENTER here, not a top-left corner -- the
@@ -179,6 +195,7 @@ extend Cmd:
         c.text = ""
         c.alpha = 255
         c.font_size = 1
+        c.pixels = []
         return c
 
     # An annulus: `fill` inside the inner radius (r - ring_w), `stroke` in
@@ -201,6 +218,7 @@ extend Cmd:
         c.text = ""
         c.alpha = 255
         c.font_size = 1
+        c.pixels = []
         return c
 
     pub def gradient_rect(x: int, y: int, w: int, h: int, radius: int, color_a: int, color_b: int, dir: int, ambient: int) -> Cmd:
@@ -218,6 +236,7 @@ extend Cmd:
         c.text = ""
         c.alpha = 255
         c.font_size = 1
+        c.pixels = []
         return c
 
     pub def arc_ring(cx: int, cy: int, r: int, ring_w: int, start_deg: int, sweep_deg: int, active: int, track: int, ambient: int) -> Cmd:
@@ -235,6 +254,7 @@ extend Cmd:
         c.text = ""
         c.alpha = 255
         c.font_size = 1
+        c.pixels = []
         return c
 
     pub def clip_push(x: int, y: int, w: int, h: int) -> Cmd:
@@ -252,6 +272,7 @@ extend Cmd:
         c.text = ""
         c.alpha = 255
         c.font_size = 1
+        c.pixels = []
         return c
 
     pub def clip_pop() -> Cmd:
@@ -269,6 +290,7 @@ extend Cmd:
         c.text = ""
         c.alpha = 255
         c.font_size = 1
+        c.pixels = []
         return c
 
     pub def label(x: int, y: int, text: str, fg: int, ambient: int, font_size: int) -> Cmd:
@@ -286,6 +308,27 @@ extend Cmd:
         c.alpha = 255
         c.text = text
         c.font_size = font_size
+        c.pixels = []
+        return c
+
+    # RGBA, row-major, 4 bytes/pixel -- exactly scripts/bake-image.ps1's
+    # own `<name>_pixels()` output shape, passed straight through.
+    pub def image(x: int, y: int, w: int, h: int, pixels: List[u8], ambient: int) -> Cmd:
+        mut c = Cmd()
+        c.kind = cmd_image()
+        c.x = x
+        c.y = y
+        c.w = w
+        c.h = h
+        c.radius = 0
+        c.border_w = 0
+        c.fill = 0
+        c.stroke = 0
+        c.ambient = ambient
+        c.text = ""
+        c.alpha = 255
+        c.font_size = 1
+        c.pixels = pixels
         return c
 
 pub class Scene:
@@ -305,7 +348,12 @@ extend Scene:
 
 # Field-by-field equality (proposal v4 step I: diffing). Pure data comparison,
 # same charter as the rest of this file -- no rasterizer knowledge needed to
-# tell whether two commands would paint the same pixels.
+# tell whether two commands would paint the same pixels. `pixels` is
+# deliberately NOT compared: a baked image's bytes never change at runtime
+# (they come straight out of a generated `pub def <name>_pixels()`), so kind
+# + position + size already fully determine whether two cmd_image()s paint
+# the same thing -- comparing w*h*4 bytes every frame would defeat the
+# point of diffing being cheap.
 pub def cmd_eq(a: Cmd, b: Cmd) -> bool:
     if a.kind != b.kind: return false
     if a.x != b.x or a.y != b.y or a.w != b.w or a.h != b.h: return false

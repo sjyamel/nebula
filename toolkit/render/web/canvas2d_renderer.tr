@@ -55,6 +55,12 @@ extern "C":
     # for the exact JS, mirrored here only as the extern signature.
     def js_gradient_rect(x: c_int, y: c_int, w: c_int, h: c_int, radius: c_int, color_a: c_int, color_b: c_int, dir: c_int) -> void
     def js_arc_ring(cx: c_int, cy: c_int, r: c_int, ring_w: c_int, start_deg: c_int, sweep_deg: c_int, active: c_int, track: c_int) -> void
+    # nebula1.0 Phase 4: `ptr` points at `pixels`' own RGBA backing bytes
+    # (row-major, w*h*4 long) -- the host page's own implementation uses
+    # `ImageData`/`putImageData`, RGBA being that API's native pixel format
+    # (no conversion needed, unlike every other js_* call here which packs a
+    # 0xRRGGBB int).
+    def js_image_blit(x: c_int, y: c_int, w: c_int, h: c_int, ptr: Pointer[u8], len: c_int) -> void
 
 pub class Canvas2DCanvas implements Canvas, Renderer:
     pub w: int
@@ -192,6 +198,12 @@ extend Canvas2DCanvas:
             return
         unsafe:
             js_arc_ring(cx as c_int, cy as c_int, r as c_int, ring_w as c_int, start_deg as c_int, sweep_deg as c_int, active as c_int, track as c_int)
+
+    pub def image(self, c: Canvas, x: int, y: int, w: int, h: int, pixels: List[u8]) -> void:
+        if w <= 0 or h <= 0:
+            return
+        unsafe:
+            js_image_blit(x as c_int, y as c_int, w as c_int, h as c_int, pixels as Pointer[u8], len(pixels) as c_int)
 
 pub def canvas2d_renderer_of(c: Canvas2DCanvas) -> Renderer:
     return c

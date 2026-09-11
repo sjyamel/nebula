@@ -111,6 +111,17 @@ pub def tag_icon() -> str:
 pub def tag_textinput() -> str:
     return "textinput"
 
+# nebula1.0 Phase 4 (baked images): a LEAF like `icon`, and configured the
+# SAME way -- `src-<name>` (reusing WidgetTokens.name, the identical field
+# `icon-<name>` already populates; only the TOKEN PREFIX differs) picks
+# which baked image module to paint. Unlike `icon`'s small curated built-in
+# set, a baked image's pixel data is inherently per-app (see
+# scripts/bake-image.ps1's own header), so the actual dispatch from name ->
+# pixels/w/h lives in the APP's own generated `main.tr` (cli/codegen.tr),
+# not in this toolkit-wide file.
+pub def tag_image() -> str:
+    return "image"
+
 # True for any widget tag -- used by dispatch() to decide whether a click
 # needs the widget-state-mutation path at all before falling through to the
 # ordinary handler-allowlist dispatch.
@@ -127,6 +138,7 @@ pub def is_widget_tag(tag: str) -> bool:
     if tag == tag_iconring(): return true
     if tag == tag_icon(): return true
     if tag == tag_textinput(): return true
+    if tag == tag_image(): return true
     return false
 
 # Same two one-line helpers toolkit/ui/style.tr's own token parsing uses
@@ -227,6 +239,9 @@ def apply_widget_token(t: WidgetTokens, token: str) -> void:
         return
     if has(token, "icon-"):
         t.name = after(token, "icon-")
+        return
+    if has(token, "src-"):
+        t.name = after(token, "src-")
         return
     if has(token, "placeholder-"):
         t.placeholder = Str.replace(after(token, "placeholder-"), "_", " ")
