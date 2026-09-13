@@ -1,0 +1,43 @@
+# toolkit.platform.native_browser — nebula1.0 Phase 4 (`<link>`): the
+# desktop/hosted target's UrlOpener, kept in its OWN file matching this
+# toolkit's one-implementer-per-file Canvas/Renderer convention -- see
+# toolkit.platform.browser's own header for the REAL compiler gap this
+# module tripped (the interface method's NAME, not file layout, which is
+# why it's called `launch` here too, not `open`).
+#
+# `Process.system` is a real OS process call -- unavailable (and
+# meaningless) under --freestanding/bare-metal/UEFI, which is exactly why
+# this lives apart from default_url_opener()'s safe no-op; only cli/
+# codegen.tr's gen_desktop registers this, never gen_bare/gen_uefi/gen_hosted
+# (gen_hosted renders one static frame with no event loop, so a `<link>`
+# click could never fire there regardless).
+#
+# Windows-only for now (`start`) -- this box's own desktop target is Windows
+# (see build-desktop.ps1), and there is no cross-platform OS-detection
+# constant in this toolkit yet to pick `open` (macOS) / `xdg-open` (Linux)
+# instead. A real gap, not a silent one: revisit when a non-Windows desktop
+# target actually ships.
+
+from string.str import Str
+from sys.process import Process
+from toolkit.platform.browser import UrlOpener
+
+pub class NativeUrlOpener implements UrlOpener:
+    _unused: int
+
+extend NativeUrlOpener:
+    pub def init() -> NativeUrlOpener:
+        mut o = NativeUrlOpener()
+        o._unused = 0
+        return o
+
+    pub def launch(self, url: str) -> void:
+        # `url` rides inside a double-quoted shell argument below -- a `"`
+        # in it would close that quote early and let whatever follows be
+        # interpreted as a new command by cmd.exe. `href-<url>` is normally
+        # author-supplied static markup, not runtime/user input, but this
+        # class exists specifically to shell out, so it gets this one cheap
+        # check rather than trusting that invariant forever.
+        if Str.contains(url, "\""):
+            return
+        Process.system("start \"\" \"" + url + "\"")

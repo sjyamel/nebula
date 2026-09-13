@@ -4,19 +4,76 @@
 # comments, everything a string until someone asks for it as an int. Tauraro
 # has no TOML or JSON parser, and adding one to read six settings would be a
 # larger dependency than the thing it configures.
+#
+# ## Pages, not a single entry file
+#
+# An app is one or more PAGES, each its own folder: `app/<name>/<name>.nbl`
+# (the UI, as markup -- renamed from `.ui` so it reads as nebula's own
+# format, not a generic "user interface" file) plus an optional
+# `app/<name>/<name>.tr` (handlers, via `register_all(it)`, and optionally
+# `on_frame(...)` for a page that needs to paint something the markup tree
+# can't express -- see cli/codegen.tr's own header). `pages = home` is the
+# default single-page app; `pages = home, settings, about` builds all three
+# and wires them into one toolkit.ui.router.Router, navigable by name from
+# any page's own handler code. This replaced a single `entry`/`handlers`
+# pair per app -- found too cramped the first time a real app (an editor)
+# needed more than one screen.
 
 from io.file import File
 from string.str import Str
 
+# One baked image, DISCOVERED (not configured) by cli/nebula.tr's
+# bake_images() scanning Config.assets -- there is no per-image line in
+# nebula.conf; dropping a file in the assets dir is the whole registration
+# step. `rel` is the file's path relative to the assets dir (e.g.
+# "hero.jpg", or "icons/logo.png" for a nested one) -- this is BOTH the
+# `src-<rel>` value an `<image>` tag matches by AND the generated
+# AppImagePainter's dispatch key (cli/codegen.tr), so what you type in
+# markup is exactly the path under the assets dir, nothing translated.
+# `name` is `rel` sanitized into a valid Tauraro identifier (every non
+# [a-zA-Z0-9] character becomes `_`) for the baked module's function names
+# (`<name>_w()`/`_h()`/`_pixels()`) and its `nebula_assets/image_<name>.tr`
+# filename -- markup never sees this form.
+pub class ImageEntry:
+    pub name: str
+    pub rel:  str
+
 pub class Config:
-    pub name:    str
-    pub width:   int
-    pub height:  int
-    pub entry:   str   # the .ui file, relative to the project root
-    pub handlers: str  # the .tr file exporting register_all(), or "" for none
-    pub bg:      str   # page background, as a #RRGGBB literal
-    pub ok:      bool
-    pub err:     str
+    pub name:     str
+    pub width:    int
+    pub height:   int
+    pub page_dir: str        # base directory pages live under
+    pub pages:    List[str]  # page names; pages[0] is the initial route
+    pub bg:       str        # page background, as a #RRGGBB literal
+    # nebula1.0 Phase 3: `width`/`height` are the INITIAL size on every
+    # target and the ONLY size on hosted/desktop/uefi/bare (there is no
+    # "window" to fill on those). On web, the default is to fill the
+    # browser window and ignore width/height after the first paint --
+    # `fixed_size = true` opts back into the old fixed-canvas behavior
+    # (matches how every other nebula target already behaves, and is
+    # useful for a kiosk-style app that wants a specific canvas size
+    # regardless of the browser window). See cli/nebula.tr's host_page().
+    pub fixed_size: bool
+    # `assets = assets/` -- a DIRECTORY, scanned (recursively) for image
+    # files at build time by cli/nebula.tr's bake_images(); "" (the
+    # default) means no assets dir, nothing baked. See ImageEntry's own
+    # comment for how a discovered file becomes a `src-<path>` token.
+    pub assets:   str
+    # Populated by bake_images() (a filesystem scan), NOT parsed from
+    # nebula.conf directly -- unlike every other Config field, this one is
+    # discovered, not configured. Empty until a build with `assets` set
+    # actually runs.
+    pub images:   List[ImageEntry]
+    # `font = tools/fonts/MyFont.ttf` -- a custom text font, baked via the
+    # EXISTING scripts/bake-font.ps1 (already fully generic -- takes an
+    # arbitrary -FontPath/-OutTr/-Suffix, confirmed before this was added,
+    # no script changes needed) into a 4th atlas slot
+    # (toolkit.text.font.font_size_custom(), selected by the `text-custom`
+    # Style token). "" (the default) means no custom font; every page keeps
+    # using the toolkit's own baked-in JetBrains Mono.
+    pub font:     str
+    pub ok:       bool
+    pub err:      str
 
 extend Config:
     pub def defaults() -> Config:
@@ -24,21 +81,30 @@ extend Config:
         c.name = "nebula-app"
         c.width = 900
         c.height = 560
-        c.entry = "app/page.ui"
-        c.handlers = "app/page.tr"
+        c.page_dir = "app"
+        c.pages = ["home"]
         c.bg = "#0F172A"
+        c.fixed_size = false
+        c.assets = ""
+        c.images = []
+        c.font = ""
         c.ok = true
         c.err = ""
         return c
 
     pub def to_str(self) -> str:
-        return self.name + " " + self.width.to_str() + "x" + self.height.to_str() + " entry=" + self.entry
+        return self.name + " " + self.width.to_str() + "x" + self.height.to_str() + " pages=" + Str.join(self.pages, ",")
 
-# Parses one `key = value` line into the config. Unknown keys are ignored
-# rather than fatal, matching how the style system treats unknown class
-# tokens: a config from outside the build must never be able to halt the
-# tool, and a typo that silently does nothing is easier to diagnose than a
-# stack trace.
+    pub def page_nbl(self, name: str) -> str:
+        return self.page_dir + "/" + name + "/" + name + ".nbl"
+
+    pub def page_tr(self, name: str) -> str:
+        return self.page_dir + "/" + name + "/" + name + ".tr"
+
+    pub def initial_page(self) -> str:
+        if len(self.pages) == 0: return "home"
+        return self.pages[0]
+
 def apply_line(c: Config, line: str) -> void:
     mut s = Str.trim(line)
     if s == "":
@@ -65,12 +131,25 @@ def apply_line(c: Config, line: str) -> void:
     elif key == "height":
         if Str.is_digit(val):
             c.height = Str.parse_int(val)
-    elif key == "entry":
-        c.entry = val
-    elif key == "handlers":
-        c.handlers = val
+    elif key == "page_dir":
+        c.page_dir = val
+    elif key == "pages":
+        mut parts = Str.split(val, ",")
+        mut cleaned: List[str] = []
+        mut i = 0
+        while i < len(parts):
+            mut p = Str.trim(parts[i])
+            if p != "": cleaned.append(p)
+            i = i + 1
+        if len(cleaned) > 0: c.pages = cleaned
     elif key == "bg":
         c.bg = val
+    elif key == "fixed_size":
+        c.fixed_size = val == "true"
+    elif key == "assets":
+        c.assets = val
+    elif key == "font":
+        c.font = val
 
 pub def load_config(path: str) -> Config:
     mut c = Config.defaults()

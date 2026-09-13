@@ -30,6 +30,30 @@ pub class Router:
     # `.append()`/`.pop()` calls kept in lockstep.
     pub history:     List[str]
     pub hist_params: List[Dict[str, str]]
+    # On a per-frame-arena-release target (the web build's `nebula_frame`),
+    # `dispatch()` -- which can run `navigate()` below -- executes BEFORE
+    # that frame's `arena_release(_frame_mark)`, but `page()` (and its own
+    # read of `self.params`) runs AFTER it. A caller's `props` dict passed
+    # to `navigate("name", {})` is allocated in the doomed pre-release
+    # region, so storing it directly into `self.params` leaves a dangling
+    # pointer the instant that release runs -- `Dict` gets no retain/copy
+    # here (`Dict` isn't ARC-tracked at all in this compiler), so nothing
+    # keeps that memory alive past the wipe. Reproduced exactly this way:
+    # `memory access out of bounds` inside `substitute` (via `Router.page()`
+    # -> `instantiate()` -> `instantiate_node()`), on whichever frame first
+    # read `self.params` after enough intervening arena churn to actually
+    # corrupt the reclaimed bytes -- inconsistent-looking (some page-
+    # transition sequences crashed, others didn't) only because that
+    # depended on incidental allocation sizes, not on which page. EVERY
+    # real caller in this toolkit navigates with `{}` (no page in any
+    # shipped example reads a route param) -- `empty_params`, allocated
+    # ONCE here in `init()` (permanent, never touched by any arena_release,
+    # same "safe forever" status registered routes/templates already have),
+    # is what `navigate()` below stores instead of the caller's transient
+    # dict whenever `props` is empty, closing the gap for the only case
+    # any current app hits. A non-empty `props` (a real route param) would
+    # still carry this same latent risk -- no shipped page uses one yet.
+    pub empty_params: Dict[str, str]
 
 extend Router:
     pub def init() -> Router:
@@ -39,6 +63,7 @@ extend Router:
         r.params = {}
         r.history = []
         r.hist_params = []
+        r.empty_params = {}
         return r
 
     pub def register(self, name: str, template: Pointer[UiNode]) -> void:
@@ -64,7 +89,10 @@ extend Router:
             self.history.append(self.current)
             self.hist_params.append(self.params)
         self.current = name
-        self.params = props
+        if len(props) == 0:
+            self.params = self.empty_params
+        else:
+            self.params = props
 
     pub def can_back(self) -> bool:
         return len(self.history) > 0

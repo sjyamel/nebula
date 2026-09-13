@@ -34,6 +34,14 @@ pub def font_size_base() -> int:
 pub def font_size_lg() -> int:
     return 2
 
+# nebula1.0 Phase 4: a 4th, app-baked slot -- see Fonts.set_custom()'s own
+# comment. Unlike the three above, there is no toolkit.text.font_data
+# module for this one; its data comes entirely from whatever a specific
+# app baked (`font = ...` in nebula.conf, via the EXISTING scripts/
+# bake-font.ps1 -- already fully generic, no script changes needed).
+pub def font_size_custom() -> int:
+    return 3
+
 pub class Font:
     pub coverage: List[u8]
     # Copied out of the selected baked atlas at load_size() time, once, into
@@ -115,6 +123,15 @@ pub class Fonts:
     pub sm:   Font
     pub base: Font
     pub lg:   Font
+    # nebula1.0 Phase 4: the 4th, app-baked slot -- unlike sm/base/lg (baked
+    # into the toolkit itself, always present), `custom` is only ever
+    # populated by an app that declared `font = ...` in nebula.conf, via
+    # `set_custom()` below, called once from generated main.tr right after
+    # `Fonts.load()` -- so `has_custom` guards it the same "optional field,
+    # boolean says whether it's safe to read" shape `Interpreter.has_root`/
+    # `has_image_painter` already use.
+    pub custom:     Font
+    pub has_custom: bool
 
 extend Fonts:
     pub def load() -> Fonts:
@@ -122,14 +139,34 @@ extend Fonts:
         f.sm = Font.load_size(font_size_sm())
         f.base = Font.load_size(font_size_base())
         f.lg = Font.load_size(font_size_lg())
+        f.has_custom = false
         return f
 
-    # `size` is font_size_sm()/_base()/_lg(); anything else (a bad value
-    # that should never occur, but this file's "malformed input degrades
-    # safely" policy applies here too) falls back to base.
+    # Populates the custom slot from whatever scripts/bake-font.ps1 -Suffix
+    # _custom produced -- same 5 values Font.load_size's own branches copy
+    # out of a font_data module, just handed in directly since there is no
+    # `toolkit.text.font_data_custom` module (the data is per-app, not
+    # toolkit-owned, same reasoning as baked images).
+    pub def set_custom(self, cell_w: int, cell_h: int, first_char: int, glyph_count: int, coverage: List[u8]) -> void:
+        mut f = Font()
+        f.coverage = coverage
+        f.cell_w_v = cell_w
+        f.cell_h_v = cell_h
+        f.first_char_v = first_char
+        f.glyph_count_v = glyph_count
+        self.custom = f
+        self.has_custom = true
+
+    # `size` is font_size_sm()/_base()/_lg()/_custom(); anything else (a bad
+    # value that should never occur, but this file's "malformed input
+    # degrades safely" policy applies here too) falls back to base -- same
+    # fallback an app that asks for `_custom()` without ever baking one
+    # gets, via the `has_custom` guard.
     pub def pick(self, size: int) -> Font:
         if size == font_size_sm():
             return self.sm
         if size == font_size_lg():
             return self.lg
+        if size == font_size_custom() and self.has_custom:
+            return self.custom
         return self.base

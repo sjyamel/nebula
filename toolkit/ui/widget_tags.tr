@@ -34,6 +34,7 @@
 # silent no-op bug found only by noticing a widget never renders.
 
 from string.str import Str
+from toolkit.ui.style import resolve_color_token, unset
 
 pub def tag_checkbox() -> str:
     return "checkbox"
@@ -67,10 +68,120 @@ pub def tag_tabitem() -> str:
 pub def tag_listitem() -> str:
     return "listitem"
 
-# True for any widget tag (phase 1's five leaves plus phase 2's two
-# containers) -- used by dispatch() to decide whether a click needs the
-# widget-state-mutation path at all before falling through to the ordinary
-# handler-allowlist dispatch.
+# nebula1.0 Phase 3 (dashboard widgets): three more tags, for the shapes a
+# smart-home-style dashboard needs that nothing above covers -- a radial
+# value control, a radial read-only gauge, and a concentric-glow icon
+# button. `dial` is a LEAF like slider (reuses WidgetTokens' min/max/value,
+# no children); `gauge` and `iconring` are CONTAINERS like tabitem/listitem
+# (they paint their own ring/glow as decoration and let an ordinary child --
+# typically a `<text>` or an icon panel -- lay out and center inside them
+# via normal flex measurement, not a special-cased leaf size). See
+# toolkit/ui/interp.tr's emit_widget/hit_test_widget for the paint/click
+# logic and toolkit/layout/flex.tr's widget_intrinsic_w/h /
+# is_measured_widget_tag for why only `dial` is added there.
+pub def tag_dial() -> str:
+    return "dial"
+
+pub def tag_gauge() -> str:
+    return "gauge"
+
+pub def tag_iconring() -> str:
+    return "iconring"
+
+# nebula1.0 Phase 3 (icon support): a LEAF tag painting one of a small
+# curated set of vector glyphs (see toolkit/ui/interp.tr's emit_widget ->
+# paint_icon for the list) instead of a bitmap/font-glyph dependency this
+# toolkit has neither the asset pipeline nor the freestanding-target file
+# access for. `icon-<name>` (parsed into WidgetTokens.name below) picks
+# which one; `text-<color>` (the ordinary Style token every tag already
+# has) tints it, reusing Style.fg rather than inventing a second color
+# token -- an icon is conceptually "colored like text" the same way a
+# glyph would be.
+pub def tag_icon() -> str:
+    return "icon"
+
+# nebula1.0 Phase 3: a real text-input field -- a LEAF like `checkbox`/
+# `dial` (see toolkit/layout/flex.tr's widget_intrinsic_w/h). Reads
+# `placeholder-<text>` for its empty-state hint. Its actual typed content
+# does NOT live in WidgetTokens/LayoutBox at all (a string can't ride the
+# `int`-only w_value the other stateful tags share, and it changes on
+# every keystroke rather than being fixed per class-string like every
+# other widget token) -- see Interpreter.text_state's own comment in
+# toolkit/ui/interp.tr for where it actually lives and why.
+pub def tag_textinput() -> str:
+    return "textinput"
+
+# nebula1.0 Phase 4 (baked images): a LEAF like `icon`, and configured the
+# SAME way -- `src-<name>` (reusing WidgetTokens.name, the identical field
+# `icon-<name>` already populates; only the TOKEN PREFIX differs) picks
+# which baked image module to paint. Unlike `icon`'s small curated built-in
+# set, a baked image's pixel data is inherently per-app (see
+# scripts/bake-image.ps1's own header), so the actual dispatch from name ->
+# pixels/w/h lives in the APP's own generated `main.tr` (cli/codegen.tr),
+# not in this toolkit-wide file.
+pub def tag_image() -> str:
+    return "image"
+
+# nebula1.0 Phase 4 (show/hide primitive): a CONTAINER like `gauge`/
+# `iconring` -- an ordinary child tree lays out and paints normally inside
+# it (see toolkit/layout/flex.tr's own collapse comment for how its HEIGHT
+# becomes 0 when closed and eases between open/closed, the genuinely new
+# layout mechanism this tag needed). Reuses the checkbox/switch "checked"/
+# "on" token (WidgetTokens.checked, `box.w_checked`) as its OWN "open by
+# default" flag -- same bool-state shape, no new token. Not clicked
+# directly (no hit_test_widget branch): an ordinary sibling `@on_click`
+# handler calls the ALREADY-EXISTING `Interpreter.state_toggle(key, ...)`
+# on this node's own `key-<name>` to open/close it -- collapse needs no new
+# click-handling code at all, only the read+animate side.
+pub def tag_collapse() -> str:
+    return "collapse"
+
+# nebula1.0 Phase 4 (`<label>`): a CONTAINER like `tabitem` -- wraps an
+# ordinary `<text>` (or icon, or both) child that lays out and paints
+# normally, adding exactly one behavior: clicking anywhere inside it FOCUSES
+# another node, the same "click the caption, not just the tiny circle/box"
+# convenience HTML's own `<label for="...">`/`<legend>` give a form field.
+# `for-<name>` (WidgetTokens.for_key, shared with `tooltip` below -- both
+# mean "the OTHER node this one refers to") names the target the same way
+# `key-<name>` already names ITS OWN node ("K:" + name). See toolkit/ui/
+# interp.tr's hit_test_widget for the actual focus-setting logic, which is
+# the textinput click-focus branch's own logic, just retargeted.
+pub def tag_label() -> str:
+    return "label"
+
+# nebula1.0 Phase 4 (`<hr/>`): a LEAF like `icon` -- a plain filled bar,
+# `text-<color>` tinted (reusing Style.fg, same "colored like text"
+# convention `icon` already established) since a divider line has no
+# content of its own to hang a dedicated color token off of.
+pub def tag_hr() -> str:
+    return "hr"
+
+# nebula1.0 Phase 4 (`<link>`): a CONTAINER like `label` -- wraps its own
+# `<text>` child (styled by the author, same as any other tag; this file
+# adds no automatic underline/color) and opens `href-<url>` (WidgetTokens.
+# href) in the host's browser on click, via toolkit.platform.browser's
+# UrlOpener -- see that file's own header for why one target-specific
+# implementation exists per tier, and toolkit/ui/interp.tr's hit_test_widget
+# for where the actual launch() call happens.
+pub def tag_link() -> str:
+    return "link"
+
+# nebula1.0 Phase 4 (tooltip): an OVERLAY leaf/container, shown only while
+# a SIBLING trigger named by `for-<name>` is hovered -- see toolkit/layout/
+# flex.tr's build() for where `tag_tooltip()` gets `style.overlay` set
+# automatically (an author never has to remember to also type the `overlay`
+# token themselves) and toolkit/ui/interp.tr's emit() for the hover-pct
+# visibility gate. Positioning rides the SAME `x-N`/`y-N` explicit-pixel
+# tokens `overlay` already has -- there is no "follow the trigger's live
+# position automatically" yet (a real, documented gap: it would need a
+# key->box lookup this tree has no index for today), so a tooltip's
+# `x-`/`y-` has to be hand-placed near wherever its trigger actually sits.
+pub def tag_tooltip() -> str:
+    return "tooltip"
+
+# True for any widget tag -- used by dispatch() to decide whether a click
+# needs the widget-state-mutation path at all before falling through to the
+# ordinary handler-allowlist dispatch.
 pub def is_widget_tag(tag: str) -> bool:
     if tag == tag_checkbox(): return true
     if tag == tag_switch(): return true
@@ -79,6 +190,19 @@ pub def is_widget_tag(tag: str) -> bool:
     if tag == tag_progress(): return true
     if tag == tag_tabitem(): return true
     if tag == tag_listitem(): return true
+    if tag == tag_dial(): return true
+    if tag == tag_gauge(): return true
+    if tag == tag_iconring(): return true
+    if tag == tag_icon(): return true
+    if tag == tag_textinput(): return true
+    if tag == tag_image(): return true
+    if tag == tag_collapse(): return true
+    # hr paints its own bar in emit_widget; label/link/tooltip need no
+    # decoration of their own (label/link are plain clickable wrappers
+    # around ordinary children, tooltip's look is just ordinary Style
+    # tokens on an auto-overlay box) so they are deliberately NOT here --
+    # see this function's own header comment on what membership means.
+    if tag == tag_hr(): return true
     return false
 
 # Same two one-line helpers toolkit/ui/style.tr's own token parsing uses
@@ -98,6 +222,46 @@ pub class WidgetTokens:
     pub min:      int    # "min-N" token's N (slider only, default 0)
     pub max:      int    # "max-N" token's N (slider only, default 100)
     pub value:    int    # "value-N" token's N (slider/progress initial value)
+    pub name:     str    # "icon-NAME" token's NAME, "" if none (icon only)
+    # "sel-<color>"/"sel-to-<color>" -- tabitem/listitem's SELECTED-state
+    # fill, unset() (no fill, the pre-existing hardcoded look) by default.
+    # A SEPARATE token family from the ordinary `bg-*`/`to-*` Style tokens
+    # on purpose: `bg-*` paints unconditionally (every frame, selected or
+    # not -- see toolkit.ui.style's own apply_color_family_token), and a
+    # themed "selected pill" tab strip needs a fill that only ever shows up
+    # WHILE selected. Reading it here, off WidgetTokens' own independent
+    # parse of the same class string, is what lets `<tabitem
+    # "sel-sky-500 sel-to-blue-600">` skip painting anything at all until
+    # `state_get` says this particular tab is the selected one.
+    pub sel_bg:   int
+    pub sel_bg2:  int
+    # "placeholder-<text>" -- textinput only, shown (muted) while empty and
+    # unfocused. Class-string tokens are split on spaces (see this file's
+    # own `parse_widget_tokens`), so a raw multi-word placeholder can't
+    # survive that split -- `_` stands in for a space in the token itself
+    # (`placeholder-What_are_you_looking_for`) and is decoded back to " "
+    # here, once, at parse time, not on every paint.
+    pub placeholder: str
+    # "for-<name>" -- label/tooltip only. Names the OTHER node this one
+    # refers to, decoded the same way `key-<name>` already names a node's
+    # OWN identity ("K:" + name, see toolkit/layout/flex.tr's build()) --
+    # so `<label "for-search">`'s target is the SAME "K:search" a sibling
+    # `<textinput "key-search">` already answers to.
+    pub for_key: str
+    # "href-<url>" -- link only. Never `_`-decoded the way `placeholder-`
+    # is: a URL can carry its own real underscores, and `Str.split(" ")`
+    # already can't see a literal space in it either way (an author who
+    # needs one has to percent-encode it, the author's problem to have, not
+    # this parser's to solve).
+    pub href: str
+    # "tint" -- image only. A bare keyword (like "overlay"), not a
+    # color itself: opts a `<image>` into recoloring via its OWN
+    # `text-*`/fg, the same way `<icon>` always does. Deliberately NOT
+    # automatic (see toolkit/ui/interp.tr's emit_widget tag_image()
+    # branch for why: most `<image>` usage is a real photo, which fg's
+    # ALWAYS-present default would silently corrupt if tinting applied
+    # unconditionally).
+    pub tint: bool
 
 extend WidgetTokens:
     pub def default() -> WidgetTokens:
@@ -108,6 +272,13 @@ extend WidgetTokens:
         t.min = 0
         t.max = 100
         t.value = 0
+        t.name = ""
+        t.sel_bg = unset()
+        t.sel_bg2 = unset()
+        t.placeholder = ""
+        t.for_key = ""
+        t.href = ""
+        t.tint = false
         return t
 
     # Same reason StyleCache.resolve() returns Style.copy() rather than the
@@ -122,9 +293,19 @@ extend WidgetTokens:
         t.min = self.min
         t.max = self.max
         t.value = self.value
+        t.name = self.name
+        t.sel_bg = self.sel_bg
+        t.sel_bg2 = self.sel_bg2
+        t.placeholder = self.placeholder
+        t.for_key = self.for_key
+        t.href = self.href
+        t.tint = self.tint
         return t
 
 def apply_widget_token(t: WidgetTokens, token: str) -> void:
+    if token == "tint":
+        t.tint = true
+        return
     if token == "checked" or token == "on":
         t.checked = true
         return
@@ -148,6 +329,31 @@ def apply_widget_token(t: WidgetTokens, token: str) -> void:
         mut v = after(token, "value-")
         if Str.is_digit(v):
             t.value = Str.parse_int(v)
+        return
+    if has(token, "icon-"):
+        t.name = after(token, "icon-")
+        return
+    if has(token, "src-"):
+        t.name = after(token, "src-")
+        return
+    if has(token, "placeholder-"):
+        t.placeholder = Str.replace(after(token, "placeholder-"), "_", " ")
+        return
+    if has(token, "sel-to-"):
+        mut c2 = resolve_color_token(after(token, "sel-to-"))
+        if c2 != unset():
+            t.sel_bg2 = c2
+        return
+    if has(token, "sel-"):
+        mut c1 = resolve_color_token(after(token, "sel-"))
+        if c1 != unset():
+            t.sel_bg = c1
+        return
+    if has(token, "for-"):
+        t.for_key = after(token, "for-")
+        return
+    if has(token, "href-"):
+        t.href = after(token, "href-")
         return
 
 # Parses every widget-config token out of a class string, ignoring every

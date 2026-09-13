@@ -1,4 +1,19 @@
-﻿# Build a Nebula program into a browser-loadable .wasm.
+# Build a Nebula program into a browser-loadable .wasm, using tauraroc's
+# turnkey `--target wasm` link (added alongside `--wasm-memory`). There is no
+# separate zig invocation in this script anymore -- tauraroc compiles each
+# generated module to a CACHED wasm object (`zig cc -c`, reused across builds
+# whose generated C didn't change) and links them directly with `wasm-ld`.
+#
+# This replaces the old build-exe-based version, which reran zig's own build
+# driver (`zig build-exe -O ReleaseSmall`) over every C file on every build --
+# non-incremental and memory-hungry (8.8GB peak RSS linking this toolkit's
+# ~30 files, which read as a build that "just never finishes" on a box with
+# less headroom). See tauraro/src/main.tr's compile_wasm_incremental for the
+# full story. A second, independent fix (the actual dominant cost for THIS
+# toolkit) was a codegen bug: large List[u8] literals (the embedded font
+# bitmaps) generated one C function call PER ELEMENT -- 22,800 of them for
+# the largest font table -- which is what really made a cold build take an
+# hour+; that's fixed in tauraroc's list-literal codegen, not in this script.
 #
 #   .\scripts\build-web.ps1
 #   .\scripts\build-web.ps1 -Source examples\web_demo\render_web.tr -OutDir build-web
@@ -6,109 +21,67 @@
 # Then serve build-web/ over HTTP (a file:// page cannot fetch the .wasm):
 #   python3 -m http.server 8000 --directory build-web
 #
-# Three flags here are load-bearing and were found by running the build
-# without them, not by reading docs:
+# Two flags stay load-bearing here (now handled INSIDE tauraroc's own wasm
+# link path, not hand-passed to zig):
 #
 #   --freestanding   `--target wasm` ALONE FAILS. tauraro_rt.h includes
 #                    <stdio.h>, and bare wasm has no libc. --freestanding
-#                    defines TAURARO_KERNEL, which is the same switch the UEFI
-#                    and Cortex-M tiers rely on. The cost is that the program
+#                    defines TAURARO_KERNEL, the same switch the UEFI and
+#                    Cortex-M tiers rely on. The cost is that the program
 #                    must supply @allocator/@free/@realloc/@calloc itself.
-#   -rdynamic        Without it, wasm-ld drops every unreferenced symbol and
-#                    the module exports only `memory` and `_start`. Every
-#                    `pub export def` silently vanishes, and the host page
-#                    fails with "is not a function" at the first call.
-#   --import-symbols (proposal-v6 phase 3) Lets a program declare
-#                    `extern "C": def js_foo(...) -> ...` with NO Tauraro-side
-#                    definition and have it become a real WASM host import
-#                    instead of a link error -- this is what
-#                    toolkit.render.web.canvas2d_renderer needs to call real
-#                    Canvas2D (ctx.roundRect/ctx.arc/ctx.fillText) instead of
-#                    only writing raw pixels. Confirmed end-to-end (compiled,
-#                    linked, instantiated with a real JS import, called, and
-#                    the argument values round-tripped correctly) before
-#                    adding this flag here. Harmless for a build with no
-#                    unresolved externs (today's web_demo) -- the flag only
-#                    changes what happens to a symbol that WOULD otherwise be
-#                    a link error, so it stays a no-op until a program
-#                    actually declares one.
+#   --wasm-memory    Initial linear memory in MB (tauraroc default: 64).
 #
-# `render_web.tr`'s own build has zero imports -- no WASI, no JS glue
-# contract -- so the host page needs only WebAssembly.instantiate. A future
-# Canvas2D-backed program will show up in `WebAssembly.Module.imports(...)`
-# once it declares its own `extern "C"` functions; the host page then needs
-# to supply matching JS functions under the `env` import module.
+# `pub export def` visibility and JS-host `extern "C"` imports
+# (toolkit.render.web.canvas2d_renderer's Canvas2D calls) are always-on
+# inside tauraroc's wasm link path now -- no more -rdynamic/--import-symbols
+# to remember to pass by hand.
 
 param(
     [string]$Source = "examples\web_demo\render_web.tr",
     [string]$OutDir = "build-web",
     [int]$MemoryMB  = 64,
-    # zig optimisation level. ReleaseSmall produces a much smaller .wasm, but
-    # the LLVM work to get there is memory-hungry: linking this toolkit's ~33
-    # C files was measured at 8.8 GB working set on this box, which on a
-    # machine with less headroom gets the linker OOM-killed partway -- and it
-    # presents as a build that simply never finishes rather than as an error.
-    # Debug links in a fraction of the memory and time, at the cost of a much
-    # bigger module. Use Debug to iterate, ReleaseSmall to ship or measure.
-    [ValidateSet("Debug","ReleaseSafe","ReleaseFast","ReleaseSmall")]
-    [string]$Opt = "ReleaseSmall"
+    # Passed straight through to tauraroc as -O<Opt>. Each generated .c is
+    # compiled to its own cached object (build/ is NOT wiped between runs
+    # anymore -- see the note below), so switching this only recompiles what
+    # actually depends on it, not the whole toolkit. Use 0 to iterate, s to
+    # ship/measure size.
+    [ValidateSet("0", "1", "2", "3", "s")]
+    [string]$Opt = "s"
 )
 
 $ErrorActionPreference = "Stop"
 
 $sdk = Join-Path $env:USERPROFILE ".taupkg\bin\tauraroc-windows-x64"
 $tauraroc = Join-Path $sdk "tauraroc.exe"
-$zig = Join-Path $sdk "zig\zig.exe"
-foreach ($t in @($tauraroc, $zig)) { if (-not (Test-Path $t)) { throw "missing tool: $t" } }
+if (-not (Test-Path $tauraroc)) { throw "missing tool: $tauraroc" }
 if (-not (Test-Path $Source)) { throw "no such source file: $Source" }
 
 $root = (Get-Location).Path
 $out = Join-Path $root $OutDir
-if (Test-Path $out) { Remove-Item $out -Recurse -Force }
 New-Item -ItemType Directory -Force $out | Out-Null
 
 $srcFull = (Resolve-Path $Source).Path
+$wasm = Join-Path $out "nebula.wasm"
 
-# Emit C from the repo root, so toolkit.* module paths resolve.
-#
-# build/ is wiped first: tauraroc emits there, every other tier emits there
-# too, and the glob below would otherwise sweep up a previous build's
-# leftovers -- which surfaces as "unknown type name 'File'" from a
-# module_io_file.c that this program never imported.
-$stale = Join-Path $root "build"
-if (Test-Path $stale) { Remove-Item $stale -Recurse -Force }
-
-& $tauraroc $srcFull --target wasm --freestanding --emit c
+# Build from the repo root so toolkit.* module paths resolve. build/ is
+# intentionally NOT wiped here (the old script wiped it every run, which is
+# exactly what defeated its own incremental caching, on top of driving zig
+# build-exe directly): tauraroc's own per-module invalidation hashes each
+# generated .c's CONTENT (not mtime, not a directory glob), so switching
+# -Opt/-MemoryMB or even $Source is handled correctly -- only the modules
+# whose generated C actually changed get recompiled, everything else reuses
+# its cached object from build/*.o.
+& $tauraroc $srcFull --target wasm --freestanding "-O$Opt" --wasm-memory $MemoryMB -o $wasm
 if ($LASTEXITCODE -ne 0) { throw "tauraroc failed (exit $LASTEXITCODE)" }
 
-$csrc = Get-ChildItem -Path (Join-Path $root "build") -Recurse -Filter *.c | ForEach-Object { $_.FullName }
-if ($csrc.Count -eq 0) { throw "tauraroc emitted no C sources" }
-Write-Host "linking $($csrc.Count) C file(s) for wasm32-freestanding"
-
-$wasm = Join-Path $out "nebula.wasm"
-$bytes = $MemoryMB * 1024 * 1024
-
-# -cflags ... -- brackets the flags that apply to the C sources only. -w is
-# not laziness: tauraro_rt.h has `while((*d++=*s++));` idioms that zig
-# promotes to errors by default.
-$zigArgs = @(
-    "build-exe",
-    "-target", "wasm32-freestanding",
-    "-fno-entry",
-    "-rdynamic",
-    "--import-symbols",
-    "-O", $Opt,
-    "--export=__heap_base",
-    "--initial-memory=$bytes",
-    "--name", "nebula",
-    "-femit-bin=`"$wasm`"",
-    "-cflags", "-w", "-fno-sanitize=undefined", "--"
-) + $csrc
-
-& $zig @zigArgs
-if ($LASTEXITCODE -ne 0) { throw "zig build-exe failed (exit $LASTEXITCODE)" }
-
-Copy-Item (Join-Path (Split-Path $srcFull) "index.html") $out -Force -ErrorAction SilentlyContinue
+# Copy every host-page asset next to main.tr, not just index.html -- a web
+# app can have a manifest.json/icons/CSS/etc. of its own (examples/web_ide
+# does, for real PWA-installable-standalone-window support). Everything
+# except the .tr source itself and this script's own output files.
+$srcDir = Split-Path $srcFull
+Get-ChildItem $srcDir -File | Where-Object { $_.Extension -ne ".tr" } | ForEach-Object {
+    Copy-Item $_.FullName $out -Force
+}
 
 Write-Host ""
 Write-Host "built $wasm" -ForegroundColor Green

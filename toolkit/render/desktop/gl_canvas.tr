@@ -31,7 +31,7 @@ from toolkit.render.renderer import Renderer
 from toolkit.render.caps import Caps
 from toolkit.render.gamma import srgb_to_linear
 from toolkit.text.font import Font
-from toolkit.types import red_of, green_of, blue_of
+from toolkit.types import red_of, green_of, blue_of, rgb
 from string.str import Str
 
 from toolkit.render.desktop.sdl_bindings import SDL_Window, SDL_GLContext, SDL_GLattr
@@ -474,6 +474,44 @@ extend GlCanvas:
 
     pub def circle_ring(self, c: Canvas, cx: int, cy: int, r: int, ring_w: int, fill: int, ring: int, ambient: int) -> void:
         self.rounded_box(c, cx - r, cy - r, r * 2, r * 2, r, ring_w, fill, ring, ambient)
+
+    # nebula1.0 Phase 3: interface-compliance only, NOT full-fidelity -- a
+    # real per-pixel gradient/arc-sector SDF shader is a separate GL effort
+    # this pass didn't attempt (see toolkit/render/renderer.tr's own
+    # comment). Nothing in this toolkit's CLI-generated desktop target
+    # actually reaches GlCanvas today (`nebula build --desktop` opens an
+    # SdlCanvas + the default SoftwareRenderer, which DOES draw these two
+    # shapes at full quality) -- these two exist so GlCanvas still satisfies
+    # the Renderer interface and keeps compiling.
+    pub def gradient_rect(self, c: Canvas, x: int, y: int, w: int, h: int, radius: int, color_a: int, color_b: int, dir: int, ambient: int) -> void:
+        mut mid = rgb((red_of(color_a) + red_of(color_b)) / 2, (green_of(color_a) + green_of(color_b)) / 2, (blue_of(color_a) + blue_of(color_b)) / 2)
+        self.draw_shape(x, y, w, h, radius, mid, 1.0 as f32)
+
+    pub def arc_ring(self, c: Canvas, cx: int, cy: int, r: int, ring_w: int, start_deg: int, sweep_deg: int, active: int, track: int, ambient: int) -> void:
+        self.circle_ring(c, cx, cy, r, ring_w, ambient, active, ambient)
+
+    # nebula1.0 Phase 4: interface-compliance only, NOT full-fidelity -- see
+    # gradient_rect's own comment just above for why (GlCanvas isn't reached
+    # by any CLI-generated target today). Samples the first pixel's RGB as a
+    # flat placeholder fill rather than decoding the whole buffer into a real
+    # GL texture (a texture-upload path is a separate GL effort).
+    pub def image(self, c: Canvas, x: int, y: int, w: int, h: int, src_w: int, src_h: int, pixels: List[u8], tint: int) -> void:
+        mut col = 0x808080
+        if tint >= 0:
+            col = tint
+        elif len(pixels) >= 3:
+            col = rgb(pixels[0] as int, pixels[1] as int, pixels[2] as int)
+        self.draw_shape(x, y, w, h, 0, col, 1.0 as f32)
+
+    # No-ops -- interface-compliance only, same reason as image()/
+    # gradient_rect()'s own comments just above (GlCanvas isn't reached by
+    # any CLI-generated target today; a real GL scissor-rect clip is a
+    # separate GL effort).
+    pub def clip_push(self, c: Canvas, x: int, y: int, w: int, h: int) -> void:
+        pass
+
+    pub def clip_pop(self, c: Canvas) -> void:
+        pass
 
     pub def text(self, c: Canvas, font: Font, txt: str, x: int, y: int, fg: int, bg: int) -> void:
         mut tex = self.tex_base

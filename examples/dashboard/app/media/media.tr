@@ -1,0 +1,10 @@
+# Handlers for app/media/media.nbl. `<link>`'s click behavior is entirely
+# engine-driven (toolkit/ui/interp.tr's hit_test_widget) -- no handler to
+# register for it, unlike every `@on_click(...)` binding elsewhere.
+
+from toolkit.ui.interp import Interpreter
+from toolkit.ui.router import Router
+from app.nav import register_nav_handlers
+
+pub def media_register_all(it: Interpreter, router: Router) -> void:
+    register_nav_handlers(it, router)

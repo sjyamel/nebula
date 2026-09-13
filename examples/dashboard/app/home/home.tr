@@ -1,0 +1,79 @@
+# Handlers for app/home/home.nbl.
+#
+# The contract is one function: `register_all(it)`. Nebula never scans this
+# file for handler names -- a convention the compiler checks beats a regex
+# that guesses -- so anything you want reachable from markup has to be
+# registered here. A page may also export `on_frame(canvas, w, h, mx, my,
+# buttons, key, wheel)`, called every frame while this page is active, for
+# anything the markup tree alone can't draw (see cli/codegen.tr's header).
+#
+# A handler is a class implementing EventHandler rather than a function,
+# which also gives it somewhere to keep state.
+
+from toolkit.types import Event, EventHandler
+from toolkit.ui.interp import Interpreter, register_handler, CollapseToggleHandler
+from toolkit.ui.router import Router
+from app.nav import register_nav_handlers
+
+pub class Say implements EventHandler:
+    pub label: str
+
+extend Say:
+    pub def init(label: str) -> Say:
+        mut h = Say()
+        h.label = label
+        return h
+
+    pub def handle(self, e: Event) -> void:
+        print("[handler] " + self.label + " at (" + e.x.to_str() + "," + e.y.to_str() + ")")
+
+# The search button reads whatever's currently typed into the `key-search`
+# textinput in home.nbl -- `EventHandler.handle` only gets the Event, not
+# the Interpreter, so (like any handler that needs to read live widget
+# state) this stores its own reference to `it` at registration time.
+pub class SearchHandler implements EventHandler:
+    pub it: Interpreter
+
+extend SearchHandler:
+    pub def init(it: Interpreter) -> SearchHandler:
+        mut h = SearchHandler()
+        h.it = it
+        return h
+
+    pub def handle(self, e: Event) -> void:
+        mut q = self.it.text_get("K:search", "")
+        print("[search] " + q)
+
+pub def home_register_all(it: Interpreter, router: Router) -> void:
+    register_nav_handlers(it, router)
+    register_handler(it, "on_search", SearchHandler.init(it))
+    # Settings modal (nebula1.0 Phase 4): the header's gear button opens it,
+    # the backdrop or its own Close button close it -- same
+    # CollapseToggleHandler the dropdown/accordion below already use, one
+    # instance closing over the modal's own `key-settingsmodal`.
+    register_handler(it, "on_toggle_settings_modal", CollapseToggleHandler.init(it, "K:settingsmodal"))
+    # Swallows a click on the dialog's own body (title/text/padding) before
+    # it bubbles up to the backdrop panel's on_toggle_settings_modal --
+    # see home.nbl's own comment on why the dialog needs SOME handler here,
+    # not just cosmetic; this one otherwise does nothing.
+    register_handler(it, "on_dialog_body", Say.init("dialog"))
+    register_handler(it, "on_notify", Say.init("notifications"))
+    register_handler(it, "on_morning", Say.init("Good Morning mode"))
+    register_handler(it, "on_night", Say.init("Good Night mode"))
+    register_handler(it, "on_add", Say.init("add widget"))
+    register_handler(it, "on_lock", Say.init("front door"))
+    # Every stat/toggle card is wired to this -- a plain, near-silent
+    # handler whose only real job is giving each card an `event_name`, so
+    # the toolkit's built-in hover/press darken animation (toolkit.ui.
+    # interp's emit(), gated on `event_name != ""`) actually activates for
+    # them. A card with no handler at all gets no hover feedback, by
+    # design -- see that file's own comment.
+    register_handler(it, "on_card", Say.init("card"))
+    # Dropdown + accordion (nebula1.0 Phase 4): both are `<collapse>` under
+    # the hood, toggled by the SAME reusable CollapseToggleHandler
+    # (toolkit.ui.interp) -- one instance per collapse, each closing over
+    # its own `key-...` target. See toolkit.ui.interp's own comment on why
+    # the markup templating system (toolkit.ui.component) can't wire this
+    # part up by itself.
+    register_handler(it, "on_toggle_dropdown", CollapseToggleHandler.init(it, "K:roomdropdown"))
+    register_handler(it, "on_toggle_accordion", CollapseToggleHandler.init(it, "K:devicesettings"))

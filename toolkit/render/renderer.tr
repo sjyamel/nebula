@@ -33,3 +33,39 @@ pub interface Renderer:
     def circle(self, c: Canvas, cx: int, cy: int, r: int, fg: int, bg: int) -> void
     def circle_ring(self, c: Canvas, cx: int, cy: int, r: int, ring_w: int, fill: int, ring: int, ambient: int) -> void
     def text(self, c: Canvas, font: Font, s: str, x: int, y: int, fg: int, bg: int) -> void
+    # nebula1.0 Phase 3: a two-color linear gradient fill (`dir`:
+    # 0=horizontal, 1=vertical, 2=diagonal) and a partial ring stroke (a
+    # radial-gauge sweep, `start_deg`/`sweep_deg` in degrees, `active` the
+    # swept color and `track` the rest of the circumference) -- see
+    # toolkit.ui.interp's paint_gradient_rect_aa/paint_arc_ring_aa for the
+    # default (software) implementation these two are modeled on.
+    def gradient_rect(self, c: Canvas, x: int, y: int, w: int, h: int, radius: int, color_a: int, color_b: int, dir: int, ambient: int) -> void
+    def arc_ring(self, c: Canvas, cx: int, cy: int, r: int, ring_w: int, start_deg: int, sweep_deg: int, active: int, track: int, ambient: int) -> void
+    # nebula1.0 Phase 4: a plain RGBA blit -- `pixels` row-major, 4
+    # bytes/pixel, src_w*src_h*4 long, exactly scripts/bake-image.ps1's own
+    # `<name>_pixels()` output shape. `x/y/w/h` is the DESTINATION rect;
+    # `src_w`/`src_h` is the baked buffer's OWN size, which a backend scales
+    # from -- see toolkit.render.scene's cmd_image() for why these are two
+    # separate sizes, not one.
+    # `tint`: -1 (unset()) = paint the baked RGB as-is; any other packed
+    # 0xRRGGBB recolors every pixel the baked alpha covers -- see
+    # toolkit.render.scene's own Cmd.image() comment for the full story.
+    def image(self, c: Canvas, x: int, y: int, w: int, h: int, src_w: int, src_h: int, pixels: List[u8], tint: int) -> void
+    # nebula1.0 Phase 4 (collapse): a REAL, previously-missing piece --
+    # `Cmd.clip_push()`/`clip_pop()` were only ever applied at the `Canvas`
+    # level (toolkit.render.clipped_canvas's ClippedCanvas, wrapped around
+    # `active` in toolkit.ui.interp's exec_cmds), which every OTHER
+    # `Renderer` method here completely bypasses on the web backend --
+    # `Canvas2DCanvas.rounded_rect()`/`text()`/etc. call `js_*` externs
+    # directly, never routing through the `c: Canvas` parameter they're
+    # given, so nothing painted via a native Canvas2D call was EVER
+    # actually being clipped (found the hard way: a `collapse` closed to
+    # 0 height still showed its children on the web target, because the
+    # clip rect's OWN 0x0 fill_rect intersection math is correct but
+    # nothing on that backend ever calls into it). SoftwareRenderer
+    # implements these as no-ops (the Canvas-level clip already does the
+    # real work for it); Canvas2DCanvas implements them via the browser's
+    # own `ctx.save()+ctx.clip()`/`ctx.restore()` -- real, fast, native
+    # clipping, not a manual per-shape intersection.
+    def clip_push(self, c: Canvas, x: int, y: int, w: int, h: int) -> void
+    def clip_pop(self, c: Canvas) -> void
