@@ -19,13 +19,14 @@ from toolkit.render.canvas import Canvas
 from toolkit.render.clipped_canvas import clip_canvas
 from toolkit.render.renderer import Renderer
 from toolkit.render.software_renderer import default_renderer
-from toolkit.ui.widget_tags import tag_checkbox, tag_switch, tag_radio, tag_slider, tag_progress, tag_tabitem, tag_listitem, tag_dial, tag_gauge, tag_iconring, tag_icon, tag_textinput, is_widget_tag
+from toolkit.ui.widget_tags import tag_checkbox, tag_switch, tag_radio, tag_slider, tag_progress, tag_tabitem, tag_listitem, tag_dial, tag_gauge, tag_iconring, tag_icon, tag_textinput, tag_image, tag_collapse, tag_label, tag_hr, tag_link, tag_tooltip, is_widget_tag
 from toolkit.ui.trig import sin1000, cos1000
 from toolkit.text.font import Font, Fonts
 from string.str import Str
 from math.int import Math
 from toolkit.render.gamma import srgb_to_linear, linear_to_srgb
 from core.alloc import alloc
+from toolkit.platform.browser import UrlOpener, default_url_opener
 
 # One entry in the handler allowlist: a name UI content may reference, and the
 # host object it resolves to.
@@ -42,7 +43,11 @@ pub class HandlerSlot:
 # (one if/elif over every baked image's `name`) and registers it via
 # register_image_painter(); emit_widget's tag_image() branch calls it.
 pub interface ImagePainter:
-    def paint(self, scene: Scene, x: int, y: int, w: int, h: int, ambient: int, name: str) -> void
+    # `tint`: -1 (unset()) = the baked RGB as-is; any other packed
+    # 0xRRGGBB recolors -- see toolkit.render.scene's Cmd.image() own
+    # comment for the full story and emit_widget's tag_image() branch
+    # for where this comes from (`tint` token + `text-*` on the node).
+    def paint(self, scene: Scene, x: int, y: int, w: int, h: int, ambient: int, name: str, tint: int) -> void
 
 pub class Interpreter:
     pub cache:    StyleCache
@@ -130,6 +135,20 @@ pub class Interpreter:
     # than crashing on an unset interface field.
     pub image_painter: ImagePainter
     pub has_image_painter: bool
+    # nebula1.0 Phase 4 (`<link>`): same has_image_painter-style guard --
+    # a target that never calls register_url_opener() (bare-metal/UEFI,
+    # any hosted example that never uses `<link>`) leaves `<link>` a safe
+    # no-op instead of touching an unset interface field. See
+    # toolkit.platform.browser's own header for why one exists per target.
+    pub url_opener: UrlOpener
+    pub has_url_opener: bool
+    # nebula1.0 Phase 4 (overlay): boxes emit() finds with `style.overlay`
+    # set are collected here INSTEAD of being painted inline, then
+    # build_scene() emits each one's own subtree in a separate final pass
+    # after the main walk finishes -- see emit()'s and build_scene()'s own
+    # comments. Reset at the start of every build_scene() call, same
+    # lifetime as `scene` itself (not persisted across frames).
+    pub overlays: List[LayoutBox]
 
 extend Interpreter:
     pub def init() -> Interpreter:
@@ -152,6 +171,9 @@ extend Interpreter:
         it.text_state = {}
         it.focused_key = ""
         it.has_image_painter = false
+        it.url_opener = default_url_opener()
+        it.has_url_opener = false
+        it.overlays = []
         return it
 
     # Proposal v4 step F: read a node's persisted state, or `default` if
@@ -240,7 +262,7 @@ extend Interpreter:
     pub def render(self, node: Pointer[UiNode], c: Canvas) -> void:
         # Assign first, then paint through the field. Assigning to self.root
         # MOVES the local, and touching it afterwards is [M-1].
-        self.root = layout_tree(node, self.cache, c.width(), c.height())
+        self.root = layout_tree(node, self.cache, c.width(), c.height(), self.state)
         self.has_root = true
         self.renders = self.renders + 1
         # Two passes now, not one: emit a scene, then execute it. The split
@@ -263,7 +285,7 @@ extend Interpreter:
     # the region under the pointer before dispatching -- there is one root,
     # by design, and pretending otherwise would be worse.
     pub def render_rect(self, node: Pointer[UiNode], c: Canvas, x: int, y: int, w: int, h: int, ambient: int) -> void:
-        self.root = layout_tree_at(node, self.cache, x, y, w, h)
+        self.root = layout_tree_at(node, self.cache, x, y, w, h, self.state)
         self.has_root = true
         self.renders = self.renders + 1
         mut scene = self.build_scene(ambient)
@@ -288,7 +310,7 @@ extend Interpreter:
     # up index-for-index with last frame's) -- always correct, just not
     # optimized for that one frame.
     pub def render_diff(self, node: Pointer[UiNode], c: Canvas) -> void:
-        self.root = layout_tree(node, self.cache, c.width(), c.height())
+        self.root = layout_tree(node, self.cache, c.width(), c.height(), self.state)
         self.has_root = true
         self.renders = self.renders + 1
         mut scene = self.build_scene(self.root_bg)
@@ -329,7 +351,21 @@ extend Interpreter:
     # Still a private recursive method returning void, which is the safe
     # shape on the freestanding tiers: a recursive method returning `str` is
     # the one that hangs there (bugs.txt, "not bugs" section).
-    def emit(self, box: LayoutBox, scene: Scene, ambient_bg: int) -> void:
+    #
+    # `hidden` -- nebula1.0 Phase 4 (modal, built on collapse+overlay): true
+    # for the entire subtree under a CLOSED collapse. An ordinary flow
+    # descendant already goes invisible on its own in that case (clipped to
+    # the closed collapse's own zero-height rect, below), but an overlay
+    # descendant bypasses that clip ENTIRELY by design -- it paints in a
+    # separate final pass, outside any ancestor's clip bracket, which is
+    # exactly what makes it paint on top in the first place. Without this
+    # flag a modal's dimmed backdrop would keep rendering full-screen even
+    # while its owning collapse is closed, since nothing else ever tells the
+    # deferred final pass the collapse it lives under isn't open. Threaded
+    # down unchanged except at a closed collapse, which sets it true for
+    # everything below regardless of what it already was (once hidden,
+    # always hidden, no matter how deep an overlay sits under it).
+    def emit(self, box: LayoutBox, scene: Scene, ambient_bg: int, hidden: bool) -> void:
         # Native-like hover/pressed feedback: only for boxes an author wired
         # to an event (event_name != "") -- a plain decorative panel never
         # darkens just because the cursor happens to be over it.
@@ -429,15 +465,71 @@ extend Interpreter:
         # overflow:hidden clips a container's content, not the container
         # itself). See toolkit/render/clipped_canvas.tr for the mechanism
         # execute_software/execute_diff apply these bracketing commands with.
-        if box.style.clip:
+        #
+        # nebula1.0 Phase 4 (collapse): ALWAYS clipped, not opt-in via the
+        # `clip` token -- box.h here is already the CURRENT eased height
+        # (toolkit.layout.flex's measure() set it, reading state this same
+        # frame), not the children's natural content height, so without
+        # this a mid-animation or closed collapse would still paint its
+        # full-height content spilling out past its own (shrunk) box.
+        mut needs_clip = box.style.clip or box.tag == tag_collapse()
+        if needs_clip:
             scene.add(Cmd.clip_push(box.x, box.y, box.w, box.h))
+
+        # See emit()'s own `hidden` param comment: a closed collapse hides
+        # its ENTIRE subtree, overlay descendants included, no matter how
+        # deep -- computed once here rather than per-child since it never
+        # varies within one box's own child loop.
+        mut child_hidden = hidden or (box.tag == tag_collapse() and not box.collapse_open)
 
         mut i = 0
         while i < len(box.children):
-            self.emit(box.children[i], scene, child_ambient)
+            # nebula1.0 Phase 4 (overlay): deferred, not emitted here -- its
+            # Cmds need to land at the END of the whole Scene (see
+            # build_scene()'s final pass), not wherever this child happens
+            # to sit in tree-traversal order. toolkit.layout.flex's place()
+            # already positioned it against the whole page, independent of
+            # this box's own flow, so skipping it here costs nothing.
+            #
+            # Deliberately NOT bound to a local (`mut child = box.children[i]`)
+            # here -- a real compiler bug found this way: a local that gets
+            # STORED (`self.overlays.append(...)`) on one branch but only
+            # ever passed BY REFERENCE (`self.emit(...)`) on the other is an
+            # ownership pattern nothing else in this file has, and it made
+            # the compiler's own auto-drop analysis call `_trdrop_LayoutBox`
+            # on an ARENA-allocated LayoutBox -- which is never individually
+            # freed, only mass-reclaimed via arena_release(), so treating it
+            # like a normal owned heap object read garbage refcount/type
+            # metadata from arena bytes and crashed ("memory access out of
+            # bounds", 100% reproducible on the very first real frame).
+            # Re-indexing `box.children[i]` fresh in each branch, matching
+            # every OTHER child-loop in this file that never hit this, is
+            # the fix; not filed upstream (found via bisection under this
+            # session's own severe memory pressure, not root-caused inside
+            # the compiler itself).
+            if box.children[i].style.overlay:
+                # nebula1.0 Phase 4 (tooltip): shown only while the trigger
+                # it names (`for-<name>`) is currently hovered -- reuses the
+                # SAME "#hover" eased pct every box already writes just
+                # above (is_hot/target_pct/anim_toward, near the top of this
+                # method), no new tracking needed. If the trigger sits AFTER
+                # this tooltip in markup order this reads last frame's pct
+                # instead of this one's (one frame of lag, ~16ms, never
+                # visible) -- cheaper than a two-pass walk to fix an author
+                # ordering choice that is trivial to just avoid instead
+                # (put the tooltip after its trigger).
+                mut show_overlay = true
+                if box.children[i].tag == tag_tooltip():
+                    show_overlay = false
+                    if box.children[i].w_for != "":
+                        show_overlay = self.state_get("K:" + box.children[i].w_for + "#hover", 0) > 0
+                if not child_hidden and show_overlay:
+                    self.overlays.append(box.children[i])
+            else:
+                self.emit(box.children[i], scene, child_ambient, child_hidden)
             i = i + 1
 
-        if box.style.clip:
+        if needs_clip:
             scene.add(Cmd.clip_pop())
 
     # Markup-tag widgets (phase 1): one branch per tag, porting the exact
@@ -771,6 +863,14 @@ extend Interpreter:
             paint_icon(scene, box, box.style.fg, ambient_bg)
             return ambient_bg
 
+        # nebula1.0 Phase 4 (`<hr/>`): a plain filled bar, `box.style.fg`
+        # tinted -- same "colored like text" reuse tag_icon() just above
+        # already established, so a divider needs no color token of its
+        # own (`<hr "text-slate-200"/>` is the whole story).
+        if box.tag == tag_hr():
+            scene.add(Cmd.rounded_rect(box.x, box.y, box.w, box.h, 0, box.style.fg, ambient_bg))
+            return ambient_bg
+
         # nebula1.0 Phase 4 (baked images): `src-<name>` (parsed into
         # box.w_name, same field icon-<name> already populates) selects
         # which baked image to paint -- dispatched through the app's own
@@ -779,9 +879,43 @@ extend Interpreter:
         # for an app that baked no images, or a name it doesn't recognize --
         # same "degrades safely" contract the rest of this file's optional
         # hooks already have.
+        #
+        # `tint` (nebula1.0 Phase 4, icon tinting): the `tint` token
+        # (WidgetTokens.tint/box.w_tint) is a deliberate, explicit
+        # author opt-in -- reusing `box.style.fg` UNCONDITIONALLY would
+        # recolor a photo/hero `<image>` whose author never asked for
+        # that (fg always has SOME default, so there is no "unset" to
+        # detect at the Style level alone). `<image "src-icons/house.svg
+        # tint text-white w-6 h-6"/>` tints; `<image "src-hero w-64
+        # h-64"/>` does not -- same reuse-not-invent-a-color-token
+        # convention `<icon>` already established for its own fg tint.
         if box.tag == tag_image():
             if self.has_image_painter:
-                self.image_painter.paint(scene, box.x, box.y, box.w, box.h, ambient_bg, box.w_name)
+                mut tint = 0 - 1
+                if box.w_tint:
+                    tint = box.style.fg
+                self.image_painter.paint(scene, box.x, box.y, box.w, box.h, ambient_bg, box.w_name, tint)
+            return ambient_bg
+
+        # nebula1.0 Phase 4 (collapse): steps the SAME eased height
+        # toolkit.layout.flex's measure() just read (this frame, via
+        # `state[node_key + "#h"]`) one tick closer to its target -- open
+        # means `box.collapse_natural_h` (this frame's real, fully-open
+        # content height, stashed by measure() before it overwrote box.h),
+        # closed means 0. Written back into `state` here so NEXT frame's
+        # measure() sees the new value -- "layout reads yesterday's
+        # animated value, paint computes today's", same split anim_toward
+        # already establishes for hover/knob. No painting of its own: a
+        # collapse has no visual beyond its ordinary Style bg/border
+        # (already painted above by emit()'s general path) and its
+        # children (painted by emit()'s own recursion, clipped to
+        # box.h -- see that method's own "needs_clip" comment).
+        if box.tag == tag_collapse():
+            mut open = self.state_get(box.node_key, b2i(box.w_checked)) != 0
+            mut target = 0
+            if open:
+                target = box.collapse_natural_h
+            self.anim_toward(box.node_key + "#h", target, collapse_anim_step(box.collapse_natural_h))
             return ambient_bg
 
         # nebula1.0 Phase 3: a real text-input field -- its own bg/border
@@ -836,6 +970,22 @@ extend Interpreter:
             self.state_set(scroll_key, scroll)
 
             scene.add(Cmd.clip_push(box.x, box.y, box.w, box.h))
+            # nebula1.0 Phase 4: Ctrl+A's selection highlight -- painted
+            # BEFORE the text (see Cmd.label just below) so the glyphs
+            # themselves draw on top of the fill, not under it. `#sel`/
+            # `#has_sel` -- see edit_text_state's own header comment for
+            # why this is TWO fields, not one sentinel value.
+            mut sel = self.state_get(box.node_key + "#sel", 0)
+            mut has_sel_paint = self.state_get(box.node_key + "#has_sel", 0) != 0
+            if has_sel_paint and sel != cursor:
+                mut sel_from = cursor
+                mut sel_to = sel
+                if sel < cursor:
+                    sel_from = sel
+                    sel_to = cursor
+                mut hl_x = tx + sel_from * gw - scroll
+                mut hl_w = (sel_to - sel_from) * gw
+                scene.add(Cmd.rounded_rect(hl_x, ty, hl_w, gh, 0, 0xB4D7FF, ambient_bg))
             if content != "":
                 scene.add(Cmd.label(tx - scroll, ty, content, box.style.fg, ambient_bg, box.style.font_size))
             elif box.w_placeholder != "":
@@ -854,8 +1004,28 @@ extend Interpreter:
     # caller can inspect, translate or diff a frame before it is drawn.
     pub def build_scene(self, ambient_bg: int) -> Scene:
         mut scene = Scene.init()
+        self.overlays = []
         if self.has_root:
-            self.emit(self.root, scene, ambient_bg)
+            self.emit(self.root, scene, ambient_bg, false)
+            # nebula1.0 Phase 4 (overlay): final pass, after the whole tree
+            # has emitted -- whatever the main walk collected above now
+            # gets its own subtree emitted last, so its Cmds sit at the END
+            # of `scene`. Paint order IS scene order (see execute_software/
+            # execute_diff), so this is what makes an overlay render on top
+            # of everything else regardless of where it sits in markup.
+            # `ambient_bg` (not each overlay's real backdrop, which is
+            # whatever ends up behind it -- unknowable here) is the same
+            # approximation every anti-aliased edge in this file already
+            # makes when the true backdrop isn't a flat color; a modal's own
+            # dimmed backdrop panel is expected to paint an opaque/near-
+            # opaque fill first for exactly this reason. `false`: an overlay
+            # only ever reaches this list when emit()'s own child loop just
+            # decided it ISN'T hidden (see that check), so it always starts
+            # its own subtree visible.
+            mut oi = 0
+            while oi < len(self.overlays):
+                self.emit(self.overlays[oi], scene, ambient_bg, false)
+                oi = oi + 1
         return scene
 
     # (paint_rounded_rect_aa / paint_corner_aa are free functions below --
@@ -907,7 +1077,7 @@ extend Interpreter:
         # currently focused widget" either.
         mut name = ""
         if e.kind == ev_key():
-            name = find_handler_by_event(self.root, 0, wanted)
+            name = find_handler_by_event(self.root, 0, wanted, false)
         else:
             # A click BLURS whatever was focused unless it lands on a
             # textinput -- cleared unconditionally first, then
@@ -921,8 +1091,8 @@ extend Interpreter:
             # has no `event_name` at all, so hit_test would never find it on
             # its own, and a tag that DOES also carry `@on_click(...)` should
             # still get both (the toggle AND the handler) from one click.
-            hit_test_widget(self, self.root, self.root, e.x, e.y, 0)
-            name = hit_test(self.root, e.x, e.y, 0, wanted)
+            hit_test_widget(self, self.root, self.root, e.x, e.y, 0, false)
+            name = hit_test(self.root, e.x, e.y, 0, wanted, false)
         if name == "":
             return false
 
@@ -946,7 +1116,19 @@ extend Interpreter:
     pub def hover_cursor_kind(self) -> int:
         if not self.has_root:
             return 0
-        return cursor_kind_at(self.root, self.hover_x, self.hover_y, 0)
+        return cursor_kind_at(self.root, self.hover_x, self.hover_y, 0, false)
+
+    # nebula1.0 Phase 4 (page scroll): the root's REAL height, which can now
+    # be taller than the viewport it was laid out into -- see
+    # toolkit.layout.flex's layout_tree_at() own comment for why that no
+    # longer gets silently clamped away. A target that wants scrolling
+    # (the web host, cli/nebula.tr) polls this after each render and grows
+    # its own canvas/page to match, handing the actual scroll mechanism to
+    # the browser rather than building one in the toolkit.
+    pub def content_height(self) -> int:
+        if not self.has_root:
+            return 0
+        return self.root.h
 
 # A `<textinput>`'s content buffer capacity -- see prewarm_state's
 # tag_textinput() branch for why it's a FIXED buffer, allocated exactly
@@ -973,6 +1155,63 @@ def str_shift_right(buf: Pointer[char], from_i: int, to_i: int) -> void:
     while i > from_i:
         unsafe: buf.offset(i).write(buf.offset(i - 1).read())
         i = i - 1
+
+# Shifts buf[end .. n-1] left by (end-start) positions into buf[start ..],
+# removing the WHOLE [start, end) range in one pass and writing the new
+# null terminator -- unlike str_shift_left (always a fixed one-position
+# shift, what ordinary Backspace/Delete need), word-boundary deletion
+# (Ctrl+Backspace/Ctrl+Delete, see edit_text_state's own codes 1010/1011)
+# is the one case here that ever removes more than a single character at
+# once. Returns the new length.
+def str_remove_range(buf: Pointer[char], n: int, start: int, end: int) -> int:
+    mut gap = end - start
+    mut i = end
+    while i < n:
+        unsafe: buf.offset(i - gap).write(buf.offset(i).read())
+        i = i + 1
+    mut new_n = n - gap
+    unsafe: buf.offset(new_n).write('\0')
+    return new_n
+
+# Standard word-boundary rule (same shape a browser's own address bar
+# already uses for Ctrl+Backspace/Ctrl+Delete): first skip any run of
+# spaces immediately next to the cursor, then skip the run of non-space
+# characters after that -- so deleting from the middle of a word removes
+# just that word, and deleting right after a word WITH trailing space
+# removes the space and the word before it in one stroke, not just the
+# space. Only ASCII space (32) counts as a word boundary -- matches this
+# whole textinput's existing "printable ASCII 32..126" scope (see
+# edit_text_state's insert branch), nothing here claims to understand
+# punctuation or Unicode word segmentation.
+def word_boundary_left(buf: Pointer[char], cursor: int) -> int:
+    mut i = cursor
+    mut c = 0
+    while i > 0:
+        unsafe: c = buf.offset(i - 1).read() as int
+        if c != 32:
+            break
+        i = i - 1
+    while i > 0:
+        unsafe: c = buf.offset(i - 1).read() as int
+        if c == 32:
+            break
+        i = i - 1
+    return i
+
+def word_boundary_right(buf: Pointer[char], cursor: int, n: int) -> int:
+    mut i = cursor
+    mut c = 0
+    while i < n:
+        unsafe: c = buf.offset(i).read() as int
+        if c != 32:
+            break
+        i = i + 1
+    while i < n:
+        unsafe: c = buf.offset(i).read() as int
+        if c == 32:
+            break
+        i = i + 1
+    return i
 
 # nebula1.0 Phase 3: mutates the FOCUSED textinput's content IN PLACE, byte
 # by byte, inside a FIXED buffer allocated once by prewarm_state (see that
@@ -1006,6 +1245,26 @@ def str_shift_right(buf: Pointer[char], from_i: int, to_i: int) -> void:
 # the pre-mark warm-up phase, the same "grow everything before the first
 # mark, only mutate in place after that" invariant prewarm_widget_state
 # already established for the int-valued state Dict.
+# nebula1.0 Phase 4: a SINGLE-RANGE selection model -- `#sel` (a new
+# per-node int, same Dict as #cursor/#scroll) is the selection ANCHOR;
+# `#has_sel` (0/1) says whether it's currently meaningful. Two fields, not
+# one sentinel value (`#sel == -1` meaning "none") -- confirmed via direct
+# wasm-export instrumentation that a negative `int` written through
+# `state_set`/read back through `state_get` round-trips as a huge POSITIVE
+# number instead (`0 - 1` came back as `4294967295`, exactly the 32-bit
+# bit-pattern for -1 zero- rather than sign-extended to 64) -- a real
+# compiler/runtime bug in this exact wasm target, not fixed here (same
+# call as this whole session's other confirmed-but-worked-around compiler
+# bugs), just avoided: an explicit 0/1 flag never needs its SIGN to carry
+# meaning, so the bug has nothing to bite. The selected range is always
+# [min(#sel,#cursor), max(#sel,#cursor)) whenever `#has_sel` is set. Only
+# ever set by Ctrl+A (select everything) -- there is no click-drag or
+# shift+arrow extension here, deliberately: this textinput has no multi-
+# line/mouse-drag story at all yet, and "select all" is the one selection
+# gesture that's unambiguous without either. Every plain cursor-movement
+# code (arrows, Home/End, Ctrl+arrows) clears `#has_sel`, matching how a
+# real text field's selection disappears the moment you move the caret
+# without holding shift.
 def edit_text_state(it: Interpreter, code: int) -> void:
     mut key = it.focused_key
     if key == "":
@@ -1019,6 +1278,11 @@ def edit_text_state(it: Interpreter, code: int) -> void:
         cursor = 0
     if cursor > n:
         cursor = n
+    mut sel_key = key + "#sel"
+    mut has_sel_key = key + "#has_sel"
+    mut sel = it.state_get(sel_key, 0)
+    mut had_sel = it.state_get(has_sel_key, 0) != 0
+
     if code == 13:
         it.focused_key = ""
         return
@@ -1026,30 +1290,103 @@ def edit_text_state(it: Interpreter, code: int) -> void:
         if cursor > 0:
             cursor = cursor - 1
         it.state_set(cursor_key, cursor)
+        it.state_set(has_sel_key, 0)
         return
     if code == 1002:
         if cursor < n:
             cursor = cursor + 1
         it.state_set(cursor_key, cursor)
+        it.state_set(has_sel_key, 0)
         return
     if code == 1005:
         it.state_set(cursor_key, 0)
+        it.state_set(has_sel_key, 0)
         return
     if code == 1006:
         it.state_set(cursor_key, n)
+        it.state_set(has_sel_key, 0)
         return
+    # Ctrl+Left/Ctrl+Right: jump the cursor a whole WORD at a time (no
+    # deletion -- see word_boundary_left/right's own comment for the
+    # boundary rule, shared with Ctrl+Backspace/Ctrl+Delete below).
+    if code == 1013:
+        it.state_set(cursor_key, word_boundary_left(buf, cursor))
+        it.state_set(has_sel_key, 0)
+        return
+    if code == 1014:
+        it.state_set(cursor_key, word_boundary_right(buf, cursor, n))
+        it.state_set(has_sel_key, 0)
+        return
+    # Ctrl+A: select the whole field -- anchor at 0, cursor (the OTHER
+    # selection edge) at the end.
+    if code == 1012:
+        it.state_set(sel_key, 0)
+        it.state_set(has_sel_key, 1)
+        it.state_set(cursor_key, n)
+        return
+
+    # Every remaining code (Backspace/Delete/Ctrl+Backspace/Ctrl+Delete/
+    # printable insert) EDITS the content, and an active selection changes
+    # what "edit" means: delete/replace the WHOLE selected range first, as
+    # one step, the same "the selection IS the thing being acted on" rule
+    # every text field uses. Computed once, here, since every branch below
+    # needs it.
+    mut sel_from = cursor
+    mut sel_to = cursor
+    mut has_sel = had_sel and sel != cursor
+    if has_sel:
+        if sel < cursor:
+            sel_from = sel
+            sel_to = cursor
+        else:
+            sel_from = cursor
+            sel_to = sel
+
     if code == 1009:
-        if cursor < n:
+        if has_sel:
+            n = str_remove_range(buf, n, sel_from, sel_to)
+            it.state_set(cursor_key, sel_from)
+            it.state_set(has_sel_key, 0)
+        elif cursor < n:
             str_shift_left(buf, cursor, n - 1)
             unsafe: buf.offset(n - 1).write('\0')
         return
     if code == 8:
-        if cursor > 0:
+        if has_sel:
+            n = str_remove_range(buf, n, sel_from, sel_to)
+            it.state_set(cursor_key, sel_from)
+            it.state_set(has_sel_key, 0)
+        elif cursor > 0:
             str_shift_left(buf, cursor - 1, n - 1)
             unsafe: buf.offset(n - 1).write('\0')
             it.state_set(cursor_key, cursor - 1)
         return
+    if code == 1010:
+        if has_sel:
+            n = str_remove_range(buf, n, sel_from, sel_to)
+            it.state_set(cursor_key, sel_from)
+            it.state_set(has_sel_key, 0)
+        else:
+            mut wb = word_boundary_left(buf, cursor)
+            if wb < cursor:
+                str_remove_range(buf, n, wb, cursor)
+                it.state_set(cursor_key, wb)
+        return
+    if code == 1011:
+        if has_sel:
+            n = str_remove_range(buf, n, sel_from, sel_to)
+            it.state_set(cursor_key, sel_from)
+            it.state_set(has_sel_key, 0)
+        else:
+            mut wb2 = word_boundary_right(buf, cursor, n)
+            if wb2 > cursor:
+                str_remove_range(buf, n, cursor, wb2)
+        return
     if code >= 32 and code <= 126:
+        if has_sel:
+            n = str_remove_range(buf, n, sel_from, sel_to)
+            cursor = sel_from
+            it.state_set(has_sel_key, 0)
         if n < textinput_buf_cap() - 1:
             str_shift_right(buf, cursor, n)
             unsafe: buf.offset(cursor).write(code as char)
@@ -1109,6 +1446,18 @@ def b2i(b: bool) -> int:
     if b:
         return 1
     return 0
+
+# nebula1.0 Phase 4 (collapse): a step size proportional to the panel's OWN
+# open height, so a tall accordion section and a short one both take
+# roughly the same NUMBER OF FRAMES to fully open/close (~8) rather than a
+# fixed pixel-step making a tall one animate much slower. Floored at 4 so
+# a near-zero-height collapse (an empty section, or one still mid-layout)
+# doesn't stall on an arbitrarily tiny step.
+def collapse_anim_step(natural_h: int) -> int:
+    mut step = natural_h / 8
+    if step < 4:
+        step = 4
+    return step
 
 # Checkbox's checkmark, ported to emit `Cmd`s instead of calling
 # `c.fill_rect` directly -- `emit_widget` (an `emit()` helper) must only
@@ -1867,27 +2216,50 @@ def paint_gradient_strip(c: Canvas, sx: int, sy: int, sw: int, sh: int, local_x:
             c.fill_rect(sx + xx, sy, 1, sh, col)
             xx = xx + 1
 
-# nebula1.0 Phase 4 (baked images): a plain per-pixel RGBA blit -- `pixels`
-# is scripts/bake-image.ps1's own row-major 4-bytes/pixel output. Pixels
-# below alpha 128 are skipped entirely (letting whatever's already painted
-# show through, e.g. a transparent PNG's background); everything else
-# paints fully opaque -- the same "flat layers, no real alpha blend"
-# precedent icon/gradient painting already established twice in this file,
-# rather than a genuine alpha-composite (no destination read-back on every
-# backend -- see toolkit.render.canvas's own header).
-pub def paint_image(c: Canvas, x: int, y: int, w: int, h: int, pixels: List[u8]) -> void:
-    if w <= 0 or h <= 0:
+# nebula1.0 Phase 4 (baked images): a plain per-pixel RGBA blit, nearest-
+# neighbor scaled from the baked buffer's OWN size (src_w x src_h) to the
+# destination rect (w x h) -- an author's `w-N h-N` almost never matches
+# the source image's real aspect ratio exactly (see Cmd.image's own
+# comment for why these are two separate sizes, found the hard way).
+# Nearest-neighbor rather than any real filtering: this is the CPU
+# fallback path (the web renderer uses the browser's own drawImage scaling
+# instead, see canvas2d_renderer.tr), and every other shape in this file
+# is flat-color/analytic, not photographic, so a soft resample would be
+# new complexity this toolkit's actual use cases (icons, small logos)
+# don't need. Pixels below alpha 128 are skipped entirely (letting
+# whatever's already painted show through, e.g. a transparent PNG's
+# background); everything else paints fully opaque -- the same "flat
+# layers, no real alpha blend" precedent icon/gradient painting already
+# established twice in this file, rather than a genuine alpha-composite
+# (no destination read-back on every backend -- see toolkit.render.canvas's
+# own header).
+pub def paint_image(c: Canvas, x: int, y: int, w: int, h: int, src_w: int, src_h: int, pixels: List[u8], tint: int) -> void:
+    if w <= 0 or h <= 0 or src_w <= 0 or src_h <= 0:
         return
+    mut use_tint = tint >= 0
+    mut tr = 0
+    mut tg = 0
+    mut tb = 0
+    if use_tint:
+        tr = red_of(tint)
+        tg = green_of(tint)
+        tb = blue_of(tint)
     mut row = 0
     while row < h:
+        mut src_row = row * src_h / h
         mut col = 0
         while col < w:
-            mut idx = (row * w + col) * 4
+            mut src_col = col * src_w / w
+            mut idx = (src_row * src_w + src_col) * 4
             mut a = pixels[idx + 3] as int
             if a >= 128:
                 mut rr = pixels[idx] as int
                 mut gg = pixels[idx + 1] as int
                 mut bb = pixels[idx + 2] as int
+                if use_tint:
+                    rr = tr
+                    gg = tg
+                    bb = tb
                 c.set_pixel(x + col, y + row, rgb(rr, gg, bb))
             col = col + 1
         row = row + 1
@@ -2003,17 +2375,70 @@ def mix_color(fg: int, bg: int, coverage: int) -> int:
 #
 # Depth-bounded: a bare metal stack is a few KB, and a malformed tree must
 # degrade to a wrong answer rather than run off the end of it.
-pub def hit_test(box: LayoutBox, x: int, y: int, depth: int, wanted_event: str) -> str:
+pub def hit_test(box: LayoutBox, x: int, y: int, depth: int, wanted_event: str, hidden: bool) -> str:
     if depth > max_depth():
         return ""
-    if not box.contains(x, y):
+    # nebula1.0 Phase 4 (modal): a `<collapse>` whose ONLY child is
+    # `overlay`-styled measures to a NATURAL size of 0x0 (an overlay
+    # contributes nothing to its parent's own measured size -- see
+    # measure()'s own overlay-exclusion comment -- and that's ALL a
+    # collapse-with-only-an-overlay-child ever has to size itself from).
+    # `box.contains(x,y)` on a zero-sized box is false for every (x,y),
+    # which -- since it's checked BEFORE ever looking at children -- made
+    # a modal's entire backdrop/dialog subtree permanently unreachable by
+    # ANY click, anywhere on the page, including its own Close button:
+    # the ancestor gate failed first, every time. A collapse's own box was
+    # never a click target in the first place (no hit_test_widget branch
+    # reads tag_collapse() at all) -- its role is purely structural, and
+    # its overlay descendants are positioned independent of it entirely
+    # (that's the whole point of `overlay`) -- so this check is skipped
+    # for a collapse specifically, letting each CHILD's own contains()
+    # do the real gating instead. An ordinary collapse (dropdown/
+    # accordion, real flow children) already has a correct non-zero size
+    # and behaves identically either way -- this only changes the
+    # previously-always-false, overlay-only case.
+    if box.tag != tag_collapse() and not box.contains(x, y):
         return ""
+    # nebula1.0 Phase 4 (modal, built on collapse+overlay): a box under a
+    # CLOSED collapse is invisible (see emit()'s own `hidden` param
+    # comment) -- an overlay descendant positions itself independent of
+    # that ancestor's own (zero) size, so without this check a modal's
+    # hidden dialog would still be clickable exactly where it would be if
+    # open, even though nothing is painted there.
+    if hidden:
+        return ""
+    mut child_hidden = box.tag == tag_collapse() and not box.collapse_open
+    # nebula1.0 Phase 4 (overlay): checked in its own pass, ahead of
+    # ordinary flow children, regardless of where it sits in box.children.
+    # An overlay paints LAST (see emit()'s deferred-paint pass) so it sits
+    # visually on top; a hit at the same point should belong to whatever's
+    # on top, the same "topmost wins" rule any real UI applies -- without
+    # this, a click meant for a modal dialog could fall through to a
+    # handler on whatever it's covering, just because that handler's node
+    # happens to sit later in markup order.
+    #
+    # `tag_tooltip()` is the one deliberate exception: it is `overlay`-
+    # styled (see toolkit/layout/flex.tr's build()) but purely decorative,
+    # so a hit test never even recurses into one -- a click/hover passes
+    # straight through it to whatever's underneath, exactly as if the
+    # tooltip weren't there at all. Same exclusion in hit_test_widget/
+    # cursor_kind_at just below/above.
+    mut oi = 0
+    while oi < len(box.children):
+        mut oc = box.children[oi]
+        if oc.style.overlay and oc.tag != tag_tooltip():
+            mut or_ = hit_test(oc, x, y, depth + 1, wanted_event, child_hidden)
+            if or_ != "":
+                return or_
+        oi = oi + 1
     mut found = ""
     mut i = 0
     while i < len(box.children):
-        mut r = hit_test(box.children[i], x, y, depth + 1, wanted_event)
-        if r != "":
-            found = r
+        mut c = box.children[i]
+        if not c.style.overlay:
+            mut r = hit_test(c, x, y, depth + 1, wanted_event, child_hidden)
+            if r != "":
+                found = r
         i = i + 1
     if found != "":
         return found
@@ -2029,16 +2454,39 @@ pub def hit_test(box: LayoutBox, x: int, y: int, depth: int, wanted_event: str) 
 # tracks the MOUSE, not which input currently has keyboard focus -- the
 # already-implemented blinking caret (emit_widget's tag_textinput() branch)
 # is the separate, focus-based indicator for that.
-pub def cursor_kind_at(box: LayoutBox, x: int, y: int, depth: int) -> int:
+pub def cursor_kind_at(box: LayoutBox, x: int, y: int, depth: int, hidden: bool) -> int:
     if depth > max_depth():
         return 0
-    if not box.contains(x, y):
+    # See hit_test's own comment on this exact check: a collapse whose
+    # only child is `overlay`-styled measures to 0x0, so gating on its own
+    # (always-false) contains() here would make a modal's textinput (if
+    # it ever has one) never show its I-beam either.
+    if box.tag != tag_collapse() and not box.contains(x, y):
         return 0
+    # nebula1.0 Phase 4 (modal): see hit_test's own comment on the same
+    # check -- a closed collapse's subtree (overlay descendants included)
+    # is invisible and must not answer a hover/cursor query either.
+    if hidden:
+        return 0
+    mut child_hidden = box.tag == tag_collapse() and not box.collapse_open
+    # nebula1.0 Phase 4 (overlay): same topmost-wins pass ordering as
+    # hit_test/hit_test_widget just below -- a textinput covered by a
+    # modal shouldn't show its I-beam through the modal.
+    mut oi = 0
+    while oi < len(box.children):
+        mut oc = box.children[oi]
+        if oc.style.overlay and oc.tag != tag_tooltip():
+            mut ok = cursor_kind_at(oc, x, y, depth + 1, child_hidden)
+            if ok != 0:
+                return ok
+        oi = oi + 1
     mut i = 0
     while i < len(box.children):
-        mut k = cursor_kind_at(box.children[i], x, y, depth + 1)
-        if k != 0:
-            return k
+        mut c = box.children[i]
+        if not c.style.overlay:
+            mut k = cursor_kind_at(c, x, y, depth + 1, child_hidden)
+            if k != 0:
+                return k
         i = i + 1
     if box.tag == tag_textinput():
         return 1
@@ -2050,14 +2498,20 @@ pub def cursor_kind_at(box: LayoutBox, x: int, y: int, depth: int) -> int:
 # free-function-not-method shape as hit_test, for the same reason (see its
 # comment): a private recursive method returning str hangs under
 # --freestanding on Cortex-M.
-pub def find_handler_by_event(box: LayoutBox, depth: int, wanted_event: str) -> str:
+pub def find_handler_by_event(box: LayoutBox, depth: int, wanted_event: str, hidden: bool) -> str:
     if depth > max_depth():
+        return ""
+    # nebula1.0 Phase 4 (modal): a closed collapse's subtree is invisible,
+    # so its `@on_key` (if any) must not be reachable by the global scan
+    # either -- same reasoning as hit_test/hit_test_widget/cursor_kind_at.
+    if hidden:
         return ""
     if box.event_name == wanted_event:
         return box.handler
+    mut child_hidden = box.tag == tag_collapse() and not box.collapse_open
     mut i = 0
     while i < len(box.children):
-        mut r = find_handler_by_event(box.children[i], depth + 1, wanted_event)
+        mut r = find_handler_by_event(box.children[i], depth + 1, wanted_event, child_hidden)
         if r != "":
             return r
         i = i + 1
@@ -2076,16 +2530,39 @@ pub def find_handler_by_event(box: LayoutBox, depth: int, wanted_event: str) -> 
 # METHOD returning str is the one that hangs there, and this returns bool
 # and is a free function, so neither trigger applies -- kept the same shape
 # anyway for consistency with the rest of this file's tree-walking helpers.
-pub def hit_test_widget(it: Interpreter, root: LayoutBox, box: LayoutBox, x: int, y: int, depth: int) -> bool:
+pub def hit_test_widget(it: Interpreter, root: LayoutBox, box: LayoutBox, x: int, y: int, depth: int, hidden: bool) -> bool:
     if depth > max_depth():
         return false
-    if not box.contains(x, y):
+    # See hit_test's own comment on this exact check: a collapse whose
+    # only child is `overlay`-styled measures to 0x0, which -- gated
+    # first, before ever looking at children -- made a modal's Close
+    # button (and anything else inside it) permanently unclickable.
+    if box.tag != tag_collapse() and not box.contains(x, y):
         return false
+    # nebula1.0 Phase 4 (modal): see hit_test's own comment on the same
+    # check -- a closed collapse's subtree is invisible and must not
+    # toggle/select/focus anything inside it either.
+    if hidden:
+        return false
+    mut child_hidden = box.tag == tag_collapse() and not box.collapse_open
+
+    # nebula1.0 Phase 4 (overlay): same topmost-wins pass ordering as
+    # hit_test just above -- a flow sibling underneath a modal must not
+    # toggle just because a click landed on the modal covering it.
+    mut oi = 0
+    while oi < len(box.children):
+        mut oc = box.children[oi]
+        if oc.style.overlay and oc.tag != tag_tooltip():
+            if hit_test_widget(it, root, oc, x, y, depth + 1, child_hidden):
+                return true
+        oi = oi + 1
 
     mut i = 0
     while i < len(box.children):
-        if hit_test_widget(it, root, box.children[i], x, y, depth + 1):
-            return true
+        mut c = box.children[i]
+        if not c.style.overlay:
+            if hit_test_widget(it, root, c, x, y, depth + 1, child_hidden):
+                return true
         i = i + 1
 
     if box.tag == tag_checkbox():
@@ -2159,46 +2636,83 @@ pub def hit_test_widget(it: Interpreter, root: LayoutBox, box: LayoutBox, x: int
     # per-frame arena release begins, not just the one a user happens to
     # click first.
     if box.tag == tag_textinput():
-        # Plain assignment -- see git history on this comment for the two
-        # things that were tried and DIDN'T work: `box.node_key + ""`
-        # (concatenating with an empty string literal corrupted the result
-        # to 1 garbage byte, a real compiler bug found and confirmed by
-        # instrumenting this exact branch) and a StringBuilder-based copy
-        # (also produced a 1-byte result here, for reasons not fully root-
-        # caused -- possibly the same underlying issue manifesting through
-        # a different code path). Plain assignment is the one that measured
-        # correctly (8 chars in, 8 chars out) in the same instrumented
-        # test. `box.node_key` lives in THIS frame's LayoutBox tree, which
-        # gets reclaimed by next frame's arena_release() -- if plain
-        # assignment shares the buffer via ARC rather than copying, that
-        # would be a real dangling-reference risk; the 20k-frame synthetic
-        # stress test (stress3.mjs) covers exactly this path (click a
-        # textinput, type, click elsewhere, repeat for thousands of
-        # frames) specifically to catch it if so.
-        it.focused_key = box.node_key
-        # Should never fire -- prewarm_state's own tag_textinput() branch
-        # already allocates every textinput's buffer pre-mark -- but stays
-        # as a defensive fallback using the SAME allocation shape rather
-        # than a bare `""` (which edit_text_state's buffer-mutation code
-        # can't safely write through) in case a node is ever reached here
-        # without having gone through prewarm first.
-        if not (box.node_key in it.text_state):
-            mut buf: Pointer[char] = 0 as Pointer[char]
-            unsafe:
-                buf = alloc[char](textinput_buf_cap())
-                buf.offset(0).write('\0')
-            it.text_set(box.node_key, buf as str)
-        # A fresh click always starts the cursor at the end -- matches the
-        # old append-only behavior as the default, now a real movable
-        # position instead of an assumption baked into paint. Safe to
-        # state_set here (rather than only ever read) because prewarm_state
-        # already forced this exact key to exist before arena_mark() -- see
-        # emit_widget's tag_textinput() branch for the full story on why
-        # that matters.
-        it.state_set(box.node_key + "#cursor", Str.len(it.text_get(box.node_key, "")))
+        focus_textinput(it, box.node_key)
+        return true
+
+    # nebula1.0 Phase 4 (`<label>`): the HTML `<label for="...">`/`<legend>`
+    # convenience -- clicking the CAPTION focuses the field it names,
+    # exactly as if the field itself had been clicked (same
+    # focus_textinput() call the textinput branch just above uses on
+    # itself). `for-<name>` resolves the same way `key-<name>` already
+    # names a node's own identity -- see tag_label()'s own comment.
+    # Silently does nothing for a `for-` with no matching textinput (typo,
+    # or the target genuinely isn't a textinput) -- focus_textinput() has
+    # no way to tell the difference and neither does this, so it degrades
+    # the same "unknown name, no crash" way an unknown `icon-`/`src-` does.
+    if box.tag == tag_label():
+        if box.w_for != "":
+            focus_textinput(it, "K:" + box.w_for)
+        return true
+
+    # nebula1.0 Phase 4 (`<link>`): opens `href-<url>` in the host's
+    # browser, via whichever UrlOpener this target registered (or a safe
+    # no-op if none did -- see toolkit.platform.browser's own header).
+    if box.tag == tag_link():
+        if box.w_href != "" and it.has_url_opener:
+            it.url_opener.launch(box.w_href)
         return true
 
     return false
+
+# nebula1.0 Phase 4 (`<label>`): factored out of the textinput click branch
+# above once `<label>` needed the IDENTICAL "focus this node" sequence
+# targeting a DIFFERENT node's key -- see that branch's own git-history
+# comment (now here) for why this is a plain string assignment, not a
+# concatenation or StringBuilder copy.
+def focus_textinput(it: Interpreter, target_key: str) -> void:
+    # Plain assignment -- see git history on this comment for the two
+    # things that were tried and DIDN'T work: `box.node_key + ""`
+    # (concatenating with an empty string literal corrupted the result
+    # to 1 garbage byte, a real compiler bug found and confirmed by
+    # instrumenting this exact branch) and a StringBuilder-based copy
+    # (also produced a 1-byte result here, for reasons not fully root-
+    # caused -- possibly the same underlying issue manifesting through
+    # a different code path). Plain assignment is the one that measured
+    # correctly (8 chars in, 8 chars out) in the same instrumented
+    # test. `target_key` lives in THIS frame's LayoutBox tree, which
+    # gets reclaimed by next frame's arena_release() -- if plain
+    # assignment shares the buffer via ARC rather than copying, that
+    # would be a real dangling-reference risk; the 20k-frame synthetic
+    # stress test (stress3.mjs) covers exactly this path (click a
+    # textinput, type, click elsewhere, repeat for thousands of
+    # frames) specifically to catch it if so.
+    it.focused_key = target_key
+    # Should never fire -- prewarm_state's own tag_textinput() branch
+    # already allocates every textinput's buffer pre-mark -- but stays
+    # as a defensive fallback using the SAME allocation shape rather
+    # than a bare `""` (which edit_text_state's buffer-mutation code
+    # can't safely write through) in case a node is ever reached here
+    # without having gone through prewarm first.
+    if not (target_key in it.text_state):
+        mut buf: Pointer[char] = 0 as Pointer[char]
+        unsafe:
+            buf = alloc[char](textinput_buf_cap())
+            buf.offset(0).write('\0')
+        it.text_set(target_key, buf as str)
+    # A fresh click always starts the cursor at the end -- matches the
+    # old append-only behavior as the default, now a real movable
+    # position instead of an assumption baked into paint. Safe to
+    # state_set here (rather than only ever read) because prewarm_state
+    # already forced this exact key to exist before arena_mark() -- see
+    # emit_widget's tag_textinput() branch for the full story on why
+    # that matters.
+    it.state_set(target_key + "#cursor", Str.len(it.text_get(target_key, "")))
+    # A fresh click also clears any leftover selection (Ctrl+A'd, then
+    # clicked away without otherwise touching the field) -- same
+    # "clicking anywhere collapses/clears the selection" rule every
+    # other cursor-movement code already follows (see edit_text_state's
+    # own header comment).
+    it.state_set(target_key + "#has_sel", 0)
 
 # Selects `box` and, if it opted into a group, clears every other node
 # sharing that group -- the one piece of click handling radio/tabitem/
@@ -2268,6 +2782,31 @@ pub def prewarm_widget_state(it: Interpreter) -> void:
 def prewarm_state(it: Interpreter, box: LayoutBox, depth: int) -> void:
     if depth > max_depth():
         return
+    # nebula1.0 Phase 4 (modal): EVERY box's "#hover" key, unconditionally --
+    # not just the widget-tag-specific keys below. emit()'s own anim_toward
+    # call (near its top, for every box it visits) used to be enough to
+    # force this pre-mark, because before this session's `hidden` param
+    # existed, a closed collapse's children ALWAYS got emitted every frame
+    # regardless of visibility (only CLIPPED, via the collapse's own
+    # zero-height clip_push -- see emit()'s "needs_clip" comment), so their
+    # "#hover" keys were already established from the very first warm-up
+    # render onward. An `overlay` descendant of a collapse breaks that:
+    # `child_hidden` now skips calling emit() on it AT ALL while closed (the
+    # whole point -- see emit()'s own `hidden` param comment), which means
+    # a modal's entire backdrop/dialog subtree can go completely untouched
+    # from warm-up through however many frames the modal stays closed, and
+    # then get emitted for the FIRST TIME the moment it opens -- which can
+    # happen on any ordinary frame, well after `_frame_mark = arena_mark()`
+    # already ran. Reproduced exactly this way: `memory access out of
+    # bounds` inside Interpreter_state_get (via anim_toward), on the exact
+    # frame a modal's `on_toggle_settings_modal` handler first flips it
+    # open, at the 20k-frame stress test's ~1920th frame. Same Dict-growth-
+    # mid-flight class documented in [[project_nebula_textinput_arena_bugs]]
+    # -- prewarm_state() ALREADY walks every box unconditionally regardless
+    # of hidden/overlay/collapsed state (no gating below), so forcing this
+    # one key here, for every box, closes the gap for ALL current and
+    # future hidden-subtree cases at once rather than special-casing modal.
+    it.state_set(box.node_key + "#hover", 0)
     if box.tag == tag_checkbox() or box.tag == tag_switch():
         it.state_set(box.node_key, b2i(box.w_checked))
     elif box.tag == tag_radio() or box.tag == tag_tabitem() or box.tag == tag_listitem():
@@ -2304,6 +2843,22 @@ def prewarm_state(it: Interpreter, box: LayoutBox, depth: int) -> void:
         # the first click on ANY textinput.
         it.state_set(box.node_key + "#cursor", 0)
         it.state_set(box.node_key + "#scroll", 0)
+        it.state_set(box.node_key + "#sel", 0)
+        it.state_set(box.node_key + "#has_sel", 0)
+    elif box.tag == tag_collapse():
+        # Forces both keys' first write (and any Dict-growth) to happen
+        # here, pre-arena_mark() -- same reasoning as textinput's own
+        # #cursor/#scroll above (a lazily-first-written state key,
+        # anywhere past this point, reproducibly hung the app once
+        # already this session). `box.collapse_natural_h` is already
+        # correct here: prewarm_widget_state's own caller (nebula_init)
+        # runs this AFTER the warm-up render_to() call, whose measure()
+        # pass already computed it on this exact tree.
+        it.state_set(box.node_key, b2i(box.w_checked))
+        mut target = 0
+        if box.w_checked:
+            target = box.collapse_natural_h
+        it.state_set(box.node_key + "#h", target)
     mut i = 0
     while i < len(box.children):
         prewarm_state(it, box.children[i], depth + 1)
@@ -2319,11 +2874,43 @@ def prewarm_state(it: Interpreter, box: LayoutBox, depth: int) -> void:
 pub def register_handler(it: Interpreter, name: str, h: EventHandler) -> void:
     it.add_slot(name, h)
 
+# nebula1.0 Phase 4: the one bit of reusable BEHAVIOR a `<collapse>`-based
+# component (dropdown/select, accordion -- see docs on those tags'
+# markup shape) needs, that the markup templating system itself
+# (toolkit.ui.component's `instantiate()`) can't provide: `evt`/`handler`
+# on a template's `@on_click(...)` are NOT substituted per-instance (only
+# class-string/text `{prop}`s are -- see instantiate_node's own match arm),
+# so N instances of the same dropdown/accordion TEMPLATE can't each carry
+# their own toggle target through the template alone. One instance of
+# THIS class per collapse (constructed with that collapse's own `key-...`
+# token value), registered under its own handler name, is the rest of the
+# wiring -- a few lines of real per-instance registration, not a re-
+# derivation of the toggle logic itself, which lives here exactly once.
+pub class CollapseToggleHandler implements EventHandler:
+    pub it:  Interpreter
+    pub key: str
+
+extend CollapseToggleHandler:
+    pub def init(it: Interpreter, key: str) -> CollapseToggleHandler:
+        mut h = CollapseToggleHandler()
+        h.it = it
+        h.key = key
+        return h
+
+    pub def handle(self, e: Event) -> void:
+        self.it.state_toggle(self.key, 0)
+
 # Same free-function-for-upcast reasoning as register_handler just above --
 # see ImagePainter's own comment for what this wires up and why.
 pub def register_image_painter(it: Interpreter, p: ImagePainter) -> void:
     it.image_painter = p
     it.has_image_painter = true
+
+# Same free-function-for-upcast reasoning as register_image_painter just
+# above -- see toolkit.platform.browser's UrlOpener for what this wires up.
+pub def register_url_opener(it: Interpreter, o: UrlOpener) -> void:
+    it.url_opener = o
+    it.has_url_opener = true
 
 # Render a tree to a concrete canvas without giving up ownership of it.
 #
@@ -2443,9 +3030,23 @@ def exec_cmds(scene: Scene, start: int, active: Canvas, fonts: Fonts, r: Rendere
         elif cmd.kind == cmd_arc_ring():
             r.arc_ring(active, cmd.x, cmd.y, cmd.radius, cmd.border_w, cmd.w, cmd.h, cmd.fill, cmd.stroke, cmd.ambient)
             i = i + 1
+        elif cmd.kind == cmd_image():
+            r.image(active, cmd.x, cmd.y, cmd.w, cmd.h, cmd.radius, cmd.border_w, cmd.pixels, cmd.stroke)
+            i = i + 1
         elif cmd.kind == cmd_clip_push():
+            # Two clips, not one: `clip_canvas` wraps `active` so anything
+            # that paints through the plain `Canvas` interface (set_pixel/
+            # fill_rect -- the software rasterizer, paint_image, paint_icon,
+            # ...) stays clipped exactly as before; `r.clip_push` ALSO tells
+            # the Renderer itself, since Canvas2DCanvas's own shape/text
+            # methods call their js_* externs directly and never touch `c`
+            # at all -- see toolkit.render.renderer's own comment on why
+            # both are needed. SoftwareRenderer's half is a no-op (nothing
+            # new to do), so this changes no existing backend's behavior.
             mut next_active: Canvas = clip_canvas(active, cmd.x, cmd.y, cmd.w, cmd.h)
+            r.clip_push(active, cmd.x, cmd.y, cmd.w, cmd.h)
             i = exec_cmds(scene, i + 1, next_active, fonts, r)
+            r.clip_pop(active)
         elif cmd.kind == cmd_clip_pop():
             return i + 1
         else:
@@ -2495,4 +3096,6 @@ pub def execute_diff(prev: Scene, curr: Scene, c: Canvas, fonts: Fonts, r: Rende
                 r.gradient_rect(c, cmd.x, cmd.y, cmd.w, cmd.h, cmd.radius, cmd.fill, cmd.stroke, cmd.border_w, cmd.ambient)
             elif cmd.kind == cmd_arc_ring():
                 r.arc_ring(c, cmd.x, cmd.y, cmd.radius, cmd.border_w, cmd.w, cmd.h, cmd.fill, cmd.stroke, cmd.ambient)
+            elif cmd.kind == cmd_image():
+                r.image(c, cmd.x, cmd.y, cmd.w, cmd.h, cmd.radius, cmd.border_w, cmd.pixels, cmd.stroke)
         i = i + 1

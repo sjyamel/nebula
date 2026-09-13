@@ -84,6 +84,14 @@ pub def font_size_base() -> int:
 pub def font_size_lg() -> int:
     return 2
 
+# nebula1.0 Phase 4: a 4th, app-baked slot -- see toolkit.text.font's
+# Fonts.set_custom()/has_custom for the loading side of this. Only ever
+# meaningful for an app that baked one via `font = ...` in nebula.conf;
+# `text-custom` on a page that didn't falls back to base the same way
+# Fonts.pick() already degrades any unrecognized size.
+pub def font_size_custom() -> int:
+    return 3
+
 # Alignment values, shared by both axes -- `justify` positions children along
 # the main axis, `align` along the cross axis, exactly as CSS flexbox does.
 # `align_stretch` is cross-axis only (a child with no explicit cross size
@@ -204,6 +212,25 @@ pub class Style:
     # emit() for where this is actually read; a container node setting it
     # has no visible effect unless it IS the text node.
     pub font_size: int
+    # nebula1.0 Phase 4: `overlay` -- the one positioning model beyond flex
+    # flow this file's own header used to say didn't exist (see that
+    # comment, now stale for this one case). A box with `overlay` set is
+    # skipped by its PARENT's flow cursor entirely (siblings position as
+    # if it weren't there, same idea CSS `position:absolute` has) but is
+    # still measured and placed -- centered on the whole page by default,
+    # or at an explicit pixel position if `x-N`/`y-N` were given -- and
+    # painted in a SEPARATE FINAL PASS after the rest of the tree, so its
+    # `Cmd`s land LAST in the `Scene` regardless of where in the markup it
+    # sits (paint order IS `Scene` order -- see toolkit.render.scene's own
+    # header). See toolkit.layout.flex's measure()/place() and
+    # toolkit.ui.interp's emit()/build_scene() for the actual mechanism.
+    pub overlay: bool
+    # unset() (the default) means "center the overlay on the page"; an
+    # explicit `x-N`/`y-N` token pair means "this exact pixel position
+    # instead", both axes independent (only giving `x-N` still centers
+    # vertically, and vice versa).
+    pub overlay_x: int
+    pub overlay_y: int
 
 extend Style:
     pub def default() -> Style:
@@ -241,6 +268,9 @@ extend Style:
         s.shadow   = false
         s.opacity_pct = 100
         s.font_size = font_size_base()
+        s.overlay  = false
+        s.overlay_x = unset()
+        s.overlay_y = unset()
         return s
 
     pub def copy(self) -> Style:
@@ -278,6 +308,9 @@ extend Style:
         s.shadow   = self.shadow
         s.opacity_pct = self.opacity_pct
         s.font_size = self.font_size
+        s.overlay  = self.overlay
+        s.overlay_x = self.overlay_x
+        s.overlay_y = self.overlay_y
         return s
 
     pub def to_str(self) -> str:
@@ -448,6 +481,27 @@ def apply_shadow_token(s: Style, token: str) -> bool:
         return true
     return false
 
+# nebula1.0 Phase 4: `overlay` + its `x-N`/`y-N` pixel-offset pair -- see
+# Style.overlay's own field comment. `x-N`/`y-N` are harmless on a box
+# that never set `overlay` (silently ignored, same "unrecognized token"
+# policy this whole file already has), so there's no ordering requirement
+# between them and the `overlay` token itself within one class string.
+def apply_overlay_token(s: Style, token: str) -> bool:
+    if token == "overlay":
+        s.overlay = true
+        return true
+    if has(token, "x-"):
+        mut vx = after(token, "x-")
+        if Str.is_digit(vx):
+            s.overlay_x = Str.parse_int(vx)
+        return true
+    if has(token, "y-"):
+        mut vy = after(token, "y-")
+        if Str.is_digit(vy):
+            s.overlay_y = Str.parse_int(vy)
+        return true
+    return false
+
 # nebula1.0 Phase 2: `opacity-N` -- see Style.opacity_pct's own field
 # comment. Malformed/out-of-range values clamp rather than error, this
 # file's usual policy: a typo must never crash the renderer.
@@ -478,6 +532,9 @@ def apply_font_size_token(s: Style, token: str) -> bool:
         return true
     if token == "text-lg":
         s.font_size = font_size_lg()
+        return true
+    if token == "text-custom":
+        s.font_size = font_size_custom()
         return true
     return false
 
@@ -855,6 +912,8 @@ pub def apply_utility(s: Style, token: str) -> void:
     if apply_clip_token(s, token):
         return
     if apply_shadow_token(s, token):
+        return
+    if apply_overlay_token(s, token):
         return
     if apply_opacity_token(s, token):
         return

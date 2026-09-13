@@ -52,8 +52,19 @@ extend SoftwareRenderer:
     pub def arc_ring(self, c: Canvas, cx: int, cy: int, r: int, ring_w: int, start_deg: int, sweep_deg: int, active: int, track: int, ambient: int) -> void:
         paint_arc_ring_aa(c, cx, cy, r, ring_w, start_deg, sweep_deg, active, track, ambient)
 
-    pub def image(self, c: Canvas, x: int, y: int, w: int, h: int, pixels: List[u8]) -> void:
-        paint_image(c, x, y, w, h, pixels)
+    pub def image(self, c: Canvas, x: int, y: int, w: int, h: int, src_w: int, src_h: int, pixels: List[u8], tint: int) -> void:
+        paint_image(c, x, y, w, h, src_w, src_h, pixels, tint)
+
+    # No-ops here: the Canvas-level ClippedCanvas wrapping toolkit.ui.
+    # interp's exec_cmds already applies (every shape this renderer draws
+    # goes through `c.fill_rect`/`c.set_pixel`, which already respects it)
+    # -- see toolkit.render.renderer's own comment on why this pair exists
+    # at all.
+    pub def clip_push(self, c: Canvas, x: int, y: int, w: int, h: int) -> void:
+        pass
+
+    pub def clip_pop(self, c: Canvas) -> void:
+        pass
 
 # A real compiler gap, found wiring this up: assigning a concrete class
 # value directly to a field declared with an INTERFACE type

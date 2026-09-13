@@ -11,7 +11,9 @@
 # which also gives it somewhere to keep state.
 
 from toolkit.types import Event, EventHandler
-from toolkit.ui.interp import Interpreter, register_handler
+from toolkit.ui.interp import Interpreter, register_handler, CollapseToggleHandler
+from toolkit.ui.router import Router
+from app.nav import register_nav_handlers
 
 pub class Say implements EventHandler:
     pub label: str
@@ -42,9 +44,19 @@ extend SearchHandler:
         mut q = self.it.text_get("K:search", "")
         print("[search] " + q)
 
-pub def register_all(it: Interpreter) -> void:
+pub def home_register_all(it: Interpreter, router: Router) -> void:
+    register_nav_handlers(it, router)
     register_handler(it, "on_search", SearchHandler.init(it))
-    register_handler(it, "on_settings", Say.init("settings"))
+    # Settings modal (nebula1.0 Phase 4): the header's gear button opens it,
+    # the backdrop or its own Close button close it -- same
+    # CollapseToggleHandler the dropdown/accordion below already use, one
+    # instance closing over the modal's own `key-settingsmodal`.
+    register_handler(it, "on_toggle_settings_modal", CollapseToggleHandler.init(it, "K:settingsmodal"))
+    # Swallows a click on the dialog's own body (title/text/padding) before
+    # it bubbles up to the backdrop panel's on_toggle_settings_modal --
+    # see home.nbl's own comment on why the dialog needs SOME handler here,
+    # not just cosmetic; this one otherwise does nothing.
+    register_handler(it, "on_dialog_body", Say.init("dialog"))
     register_handler(it, "on_notify", Say.init("notifications"))
     register_handler(it, "on_morning", Say.init("Good Morning mode"))
     register_handler(it, "on_night", Say.init("Good Night mode"))
@@ -57,3 +69,11 @@ pub def register_all(it: Interpreter) -> void:
     # them. A card with no handler at all gets no hover feedback, by
     # design -- see that file's own comment.
     register_handler(it, "on_card", Say.init("card"))
+    # Dropdown + accordion (nebula1.0 Phase 4): both are `<collapse>` under
+    # the hood, toggled by the SAME reusable CollapseToggleHandler
+    # (toolkit.ui.interp) -- one instance per collapse, each closing over
+    # its own `key-...` target. See toolkit.ui.interp's own comment on why
+    # the markup templating system (toolkit.ui.component) can't wire this
+    # part up by itself.
+    register_handler(it, "on_toggle_dropdown", CollapseToggleHandler.init(it, "K:roomdropdown"))
+    register_handler(it, "on_toggle_accordion", CollapseToggleHandler.init(it, "K:devicesettings"))

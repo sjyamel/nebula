@@ -25,10 +25,18 @@
 #       is the router's current one. For anything the markup tree can't
 #       express on its own -- a text editor's own buffer+cursor, a custom
 #       chart, anything hand-painted. Most pages don't need this.
-# Presence of each is decided by a plain substring check on the page's own
-# .tr source (`"pub def register_all("` / `"pub def on_frame("`), the same
-# spirit as the original has_handlers check (a file-existence test) just
-# extended to two possible exports instead of one -- still not a regex
+# A SINGLE-page app can name these exactly `register_all`/`on_frame`, as
+# written above. An app with TWO OR MORE pages that each define one MUST
+# instead name them `<page>_register_all`/`<page>_on_frame` (e.g. a page
+# named "settings" exports `settings_register_all`) -- see load_page's own
+# comment in the PageInfo section below for the real tauraroc bug this
+# works around (an aliased import of a same-named symbol from a second
+# module silently collapses onto the first module's one once there's more
+# than one). Presence of either is decided by a plain substring check on
+# the page's own .tr source, checked in BOTH the prefixed and plain forms
+# (register_prefixed/on_frame_prefixed) -- same spirit as the original
+# has_handlers check (a file-existence test) just extended to two possible
+# exports and two possible spellings instead of one, still not a regex
 # guessing at MARKUP handler names, which is the thing the project's own
 # convention explicitly rejects (see register_all's own doc comment below).
 #
@@ -110,6 +118,11 @@ pub class PageInfo:
     pub has_tr:        bool
     pub has_register:  bool
     pub has_on_frame:  bool
+    # True when this page's own .tr already names its exports `<page>_
+    # register_all`/`<page>_on_frame` (page_imports' own comment has the
+    # full story on why this form exists and when it's required).
+    pub register_prefixed: bool
+    pub on_frame_prefixed: bool
 
 pub def load_page(cfg: Config, name: str, baked: bool) -> PageInfo:
     mut p = PageInfo()
@@ -120,8 +133,26 @@ pub def load_page(cfg: Config, name: str, baked: bool) -> PageInfo:
         p.markup = escape_literal(raw)
     mut tr_src = File.read_text(cfg.page_tr(name))
     p.has_tr = tr_src != ""
-    p.has_register = Str.contains(tr_src, "pub def register_all(")
-    p.has_on_frame = Str.contains(tr_src, "pub def on_frame(")
+    # A real tauraroc bug: `from module import name as alias`, resolved at
+    # its OWN call site, rewrites the alias back to the bare, un-aliased
+    # `name` -- harmless for exactly one such import in a file, but once a
+    # SECOND page's .tr ALSO exports a `register_all`, its own `register_all
+    # as page2_register_all` import collapses onto the exact same bare
+    # `register_all` symbol as page1's, so EVERY page's "own" handler ends
+    # up silently calling whichever page's register_all happened to load
+    # first -- reproduced exactly this way: a dashboard SPA's per-page
+    # collapse/modal toggles all silently no-op on every page except the
+    # very first one, despite each page's own .tr correctly defining and
+    # registering its own handler. A page that names its export `<page>_
+    # register_all`/`<page>_on_frame` directly sidesteps the bug entirely
+    # (an already-unique name needs no alias, so there's nothing to
+    # collapse) -- REQUIRED for any app with 2+ pages that each define one;
+    # a single-page app can keep using the plain, un-prefixed name safely
+    # (only one import exists, so no collision is possible either way).
+    p.register_prefixed = Str.contains(tr_src, "pub def " + name + "_register_all(")
+    p.on_frame_prefixed = Str.contains(tr_src, "pub def " + name + "_on_frame(")
+    p.has_register = p.register_prefixed or Str.contains(tr_src, "pub def register_all(")
+    p.has_on_frame = p.on_frame_prefixed or Str.contains(tr_src, "pub def on_frame(")
     return p
 
 pub def load_pages(cfg: Config, target: int) -> List[PageInfo]:
@@ -148,9 +179,14 @@ def page_module(cfg: Config, name: str) -> str:
         i = i + 1
     return dotted
 
-# Aliased so N pages can each export `register_all`/`on_frame` under their
-# own names without colliding -- `from app.settings.settings import
-# register_all as settings_register_all`.
+# See load_page's own comment for the full story on register_prefixed/
+# on_frame_prefixed: a page whose .tr already names its export `<page>_
+# register_all`/`<page>_on_frame` gets a plain, unaliased import (nothing
+# to collapse); a page still using the shorter, un-prefixed `register_all`/
+# `on_frame` gets the OLD aliased form, which stays real-bug-safe as long
+# as at most one page in this build uses it (a lone alias never collides
+# with anything) -- exactly the single-page case this convention has
+# always covered.
 def page_imports(cfg: Config, pages: List[PageInfo]) -> str:
     mut s = ""
     mut i = 0
@@ -158,32 +194,46 @@ def page_imports(cfg: Config, pages: List[PageInfo]) -> str:
         mut p = pages[i]
         if p.has_register or p.has_on_frame:
             mut names = ""
-            if p.has_register: names = "register_all as " + p.name + "_register_all"
+            if p.has_register:
+                if p.register_prefixed: names = p.name + "_register_all"
+                else: names = "register_all as " + p.name + "_register_all"
             if p.has_on_frame:
                 if names != "": names = names + ", "
-                names = names + "on_frame as " + p.name + "_on_frame"
+                if p.on_frame_prefixed: names = names + p.name + "_on_frame"
+                else: names = names + "on_frame as " + p.name + "_on_frame"
             s = s + "from " + page_module(cfg, p.name) + " import " + names + "\n"
         i = i + 1
     return s
 
+# `router` -- not just `var` (the Interpreter) -- so a page's own
+# register_all() can register a handler that navigates (SPA sidebar/nav
+# links, "back" buttons, ...) via toolkit.ui.router.Router.navigate(),
+# without needing its own separate wiring path. Every register_calls()
+# call site sits AFTER router_setup()'s own generated code in the same
+# function (see gen_web/gen_desktop/gen_hosted's own ordering), which is
+# always what names it bare `router` regardless of target -- see
+# router_setup's own `declare` param for the one difference (mut vs
+# plain assignment) between a fresh local and a module-level global.
 def register_calls(pages: List[PageInfo], indent: str, var: str) -> str:
     mut s = ""
     mut i = 0
     while i < len(pages):
         mut p = pages[i]
         if p.has_register:
-            s = s + indent + p.name + "_register_all(" + var + ")\n"
+            s = s + indent + p.name + "_register_all(" + var + ", router)\n"
         i = i + 1
     return s
 
-# nebula1.0 Phase 4 (baked images): `nebula run/build` bakes each
-# `cfg.images` entry into `nebula_assets/image_<name>.tr` (see
-# cli/nebula.tr's bake_images()) BEFORE this file's generate() ever runs --
-# a plain, non-dotted-leading-char directory name on purpose, since
-# `.nebula` (a leading dot) cannot appear inside a dotted Tauraro import
-# path (`from .nebula.assets.x import y` doesn't parse the way `from
-# app.home.home import y` does). One `from nebula_assets.image_<name>
-# import <name>_w, <name>_h, <name>_pixels` per declared image.
+# nebula1.0 Phase 4 (baked images): `nebula run/build` scans `cfg.assets`
+# and bakes every image file it finds into `nebula_assets/image_<name>.tr`
+# (see cli/nebula.tr's bake_images()/ImageEntry) BEFORE this file's
+# generate() ever runs -- `nebula_assets` is a plain, non-dotted-leading-
+# char directory name on purpose, since `.nebula` (a leading dot) cannot
+# appear inside a dotted Tauraro import path (`from .nebula.assets.x
+# import y` doesn't parse the way `from app.home.home import y` does).
+# One `from nebula_assets.image_<name> import <name>_w, <name>_h,
+# <name>_pixels` per discovered image, `<name>` the SANITIZED identifier
+# (ImageEntry.name), not the markup-facing path (ImageEntry.rel).
 def image_imports(cfg: Config) -> str:
     mut s = ""
     mut i = 0
@@ -193,11 +243,14 @@ def image_imports(cfg: Config) -> str:
         i = i + 1
     return s
 
-# The ImagePainter implementor every app with `images = ...` gets, generated
-# rather than hand-written for the same reason register_handler's callers
-# are generated: the SET of baked image names is per-app config, unknowable
-# to toolkit.ui.interp (see that file's own ImagePainter comment for why the
-# toolkit can't just import app code directly).
+# The ImagePainter implementor every app with a discovered `images` list
+# gets, generated rather than hand-written for the same reason
+# register_handler's callers are generated: the SET of baked images is
+# per-app (discovered from disk), unknowable to toolkit.ui.interp (see
+# that file's own ImagePainter comment for why the toolkit can't just
+# import app code directly). Matches on `name` against ImageEntry.rel --
+# the exact `src-<rel>` value markup used -- NOT the sanitized identifier,
+# so an author never needs to know the sanitization happened at all.
 def image_painter_class(cfg: Config) -> str:
     if len(cfg.images) == 0:
         return ""
@@ -208,17 +261,33 @@ def image_painter_class(cfg: Config) -> str:
     s = s + "        mut p = AppImagePainter()\n"
     s = s + "        p._unused = 0\n"
     s = s + "        return p\n\n"
-    s = s + "    pub def paint(self, scene: Scene, x: int, y: int, w: int, h: int, ambient: int, name: str) -> void:\n"
+    s = s + "    pub def paint(self, scene: Scene, x: int, y: int, w: int, h: int, ambient: int, name: str, tint: int) -> void:\n"
     mut branch = "if"
     mut i = 0
     while i < len(cfg.images):
         mut e = cfg.images[i]
-        s = s + "        " + branch + " name == \"" + e.name + "\":\n"
-        s = s + "            scene.add(Cmd.image(x, y, w, h, " + e.name + "_pixels(), ambient))\n"
+        s = s + "        " + branch + " name == \"" + e.rel + "\":\n"
+        s = s + "            scene.add(Cmd.image(x, y, w, h, " + e.name + "_w(), " + e.name + "_h(), " + e.name + "_pixels(), ambient, tint))\n"
         branch = "elif"
         i = i + 1
     s = s + "\n"
     return s
+
+# nebula1.0 Phase 4 (custom font): `nebula_assets/font_data_custom.tr` (see
+# cli/nebula.tr's bake_font()) exists only when `cfg.font != ""`. One
+# import + one `Fonts.set_custom(...)` call, right after `Interpreter.init()`
+# (which already built `fonts` via `Fonts.load()`) so `text-custom` is live
+# from the very first render -- same "wire it in before anything reads it"
+# shape register_image_painter()'s call site already follows.
+def font_imports(cfg: Config) -> str:
+    if cfg.font == "":
+        return ""
+    return "from nebula_assets.font_data_custom import font_custom_cell_w, font_custom_cell_h, font_custom_first_char, font_custom_glyph_count, font_custom_coverage\n"
+
+def font_set_custom_call(cfg: Config, indent: str, var: str) -> str:
+    if cfg.font == "":
+        return ""
+    return indent + var + ".fonts.set_custom(font_custom_cell_w(), font_custom_cell_h(), font_custom_first_char(), font_custom_glyph_count(), font_custom_coverage())\n"
 
 # Emits `if router.current == "home": home_on_frame(...) \n elif ...` for
 # whichever pages define it. `args` is the parameter list already
@@ -272,10 +341,12 @@ def gen_hosted(cfg: Config, pages: List[PageInfo]) -> str:
     s = s + "from toolkit.ui.router import Router\n"
     s = s + "from toolkit.render.hosted.buffer import BufferCanvas\n"
     s = s + page_imports(cfg, pages)
+    s = s + font_imports(cfg)
     s = s + "\ndef main():\n"
     s = s + router_setup(cfg, pages, true, "    ", true)
     s = s + "\n    mut it = Interpreter.init()\n"
     s = s + "    it.root_bg = " + hex_of(cfg.bg) + "\n"
+    s = s + font_set_custom_call(cfg, "    ", "it")
     s = s + register_calls(pages, "    ", "it")
     s = s + "    mut canvas = BufferCanvas.init(" + cfg.width.to_str() + ", " + cfg.height.to_str() + ", " + hex_of(cfg.bg) + ")\n"
     s = s + "    render_to(it, router.page({}), canvas)\n"
@@ -290,16 +361,25 @@ def gen_desktop(cfg: Config, pages: List[PageInfo]) -> str:
     s = s + "from io.file import File\n"
     s = s + "from toolkit.types import Event\n"
     s = s + "from toolkit.ui.parser import UiParser\n"
-    s = s + "from toolkit.ui.interp import Interpreter, render_to\n"
+    s = s + "from toolkit.ui.interp import Interpreter, render_to, register_url_opener\n"
     s = s + "from toolkit.ui.router import Router\n"
     s = s + "from toolkit.render.desktop.sdl_canvas import SdlCanvas, poll_event, last_click, mouse_state\n"
     s = s + "from toolkit.render.desktop.sdl_bindings import SDL_Delay, Uint32\n"
+    s = s + "from toolkit.platform.native_browser import NativeUrlOpener\n"
     s = s + page_imports(cfg, pages)
+    s = s + font_imports(cfg)
     s = s + "\ndef main():\n"
     s = s + router_setup(cfg, pages, true, "    ", true)
     s = s + "\n    mut it = Interpreter.init()\n"
     s = s + "    it.root_bg = " + hex_of(cfg.bg) + "\n"
+    s = s + font_set_custom_call(cfg, "    ", "it")
     s = s + register_calls(pages, "    ", "it")
+    # nebula1.0 Phase 4 (`<link>`): a desktop window's own OS always has
+    # SOME way to open a URL (Process.system("start ...") on this box's own
+    # Windows target -- see toolkit.platform.browser's own header for the
+    # non-Windows gap), unlike bare-metal/UEFI, so this is unconditional
+    # the same way the web target's registration just below is.
+    s = s + "    register_url_opener(it, NativeUrlOpener.init())\n"
     s = s + "    mut canvas = SdlCanvas.open(\"" + cfg.name + "\", " + cfg.width.to_str() + ", " + cfg.height.to_str() + ")\n"
     s = s + "    if not canvas.ok():\n"
     s = s + "        print(\"could not open a window -- is SDL2.dll beside the exe?\")\n"
@@ -352,13 +432,14 @@ def gen_web(cfg: Config, pages: List[PageInfo]) -> str:
     mut s = banner(cfg, "web")
     s = s + "from toolkit.types import Event\n"
     s = s + "from toolkit.ui.parser import UiParser\n"
-    s = s + "from toolkit.ui.interp import Interpreter, render_to, prewarm_widget_state, ImagePainter, register_image_painter\n"
+    s = s + "from toolkit.ui.interp import Interpreter, render_to, prewarm_widget_state, ImagePainter, register_image_painter, register_url_opener\n"
     s = s + "from toolkit.ui.router import Router\n"
     s = s + "from toolkit.render.scene import Scene, Cmd\n"
-    s = s + "from toolkit.render.web.canvas2d_renderer import Canvas2DCanvas, canvas2d_renderer_of\n"
+    s = s + "from toolkit.render.web.canvas2d_renderer import Canvas2DCanvas, canvas2d_renderer_of, Canvas2DUrlOpener\n"
     s = s + "from toolkit.render.renderer import Renderer\n"
     s = s + page_imports(cfg, pages)
     s = s + image_imports(cfg)
+    s = s + font_imports(cfg)
     s = s + arena_hooks()
     s = s + image_painter_class(cfg)
     s = s + "pub export def nebula_heap_init(base: Pointer[u8], size: usize) -> void:\n"
@@ -408,13 +489,49 @@ def gen_web(cfg: Config, pages: List[PageInfo]) -> str:
     s = s + router_setup(cfg, pages, false, "    ", false)
     s = s + "    _it = Interpreter.init()\n"
     s = s + "    _it.root_bg = " + hex_of(cfg.bg) + "\n"
+    s = s + font_set_custom_call(cfg, "    ", "_it")
     s = s + register_calls(pages, "    ", "_it")
     if len(cfg.images) > 0:
         s = s + "    register_image_painter(_it, AppImagePainter.init())\n"
+    # nebula1.0 Phase 4 (`<link>`): every web build gets a real UrlOpener --
+    # unlike baked images/fonts, this needs no opt-in `nebula.conf` line
+    # (a browser is always there to `window.open` into on this target).
+    s = s + "    register_url_opener(_it, Canvas2DUrlOpener.init())\n"
     s = s + "    mut warm = Canvas2DCanvas.init(w, h)\n"
     s = s + "    _it.renderer = canvas2d_renderer_of(warm)\n"
     s = s + "    render_to(_it, router.page({}), warm)\n"
     s = s + "    prewarm_widget_state(_it)\n"
+    # nebula1.0 Phase 4 (SPA nav): prewarm EVERY registered page's tree, not
+    # just the initial one. The block above only ever renders+prewarms
+    # whichever page `router_setup()` navigated to first -- but `router.
+    # navigate()` (wired to every sidebar `@on_click` handler) can swap
+    # `router.page({})` to any OTHER registered page on any later frame,
+    # building THAT page's LayoutBox tree for the very first time, post-
+    # `arena_mark()`. Its own click-driven state keys (radio/tabitem/
+    # collapse/textinput -- see prewarm_widget_state's own comment on why
+    # those specifically need this) were never touched by the single
+    # initial-page prewarm above, so the FIRST navigation to a new page can
+    # grow Interpreter.state's Dict backing storage mid-flight, in the
+    # exact region about to be reclaimed -- the same crash class the
+    # single-page prewarm above already exists to prevent, just never
+    # extended past page 1. Reproduced exactly this way: `_trdrop_
+    # LayoutBox` "memory access out of bounds" on frame 0 of a stress test
+    # whose very first synthetic click lands on a sidebar nav icon.
+    # Navigating through every page here (each render+prewarm is a no-op
+    # past the first time any given key is touched) then back to the
+    # initial page leaves `_it`/`router` in the same state this block
+    # already left them in before, just with every page's keys pre-grown.
+    mut i = 0
+    while i < len(pages):
+        mut p = pages[i]
+        if p.name != cfg.initial_page():
+            s = s + "    router.navigate(\"" + p.name + "\", {})\n"
+            s = s + "    render_to(_it, router.page({}), warm)\n"
+            s = s + "    prewarm_widget_state(_it)\n"
+        i = i + 1
+    if len(pages) > 1:
+        s = s + "    router.navigate(\"" + cfg.initial_page() + "\", {})\n"
+        s = s + "    render_to(_it, router.page({}), warm)\n"
     s = s + "    _frame_mark = arena_mark()\n"
     s = s + "\npub export def nebula_frames() -> int:\n"
     s = s + "    return _frames\n\n"
@@ -425,6 +542,11 @@ def gen_web(cfg: Config, pages: List[PageInfo]) -> str:
     # since a single <canvas> has no per-region native cursor of its own.
     s = s + "pub export def nebula_cursor_kind() -> int:\n"
     s = s + "    return _it.hover_cursor_kind()\n\n"
+    # nebula1.0 Phase 4 (page scroll): the host JS polls this after every
+    # frame and grows the canvas/page to match when content is taller than
+    # the viewport -- see toolkit.ui.interp's content_height() own comment.
+    s = s + "pub export def nebula_content_height() -> int:\n"
+    s = s + "    return _it.content_height()\n\n"
     s = s + "pub export def nebula_frame(w: int, h: int, mx: int, my: int, buttons: int, key: int, wheel: int) -> void:\n"
     s = s + "    _frames = _frames + 1\n\n"
     # dispatch() hit-tests against Interpreter.root, which is the tree the

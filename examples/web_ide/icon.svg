@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <rect width="128" height="128" rx="24" fill="#0b1120"/>
-  <rect x="8" y="8" width="112" height="112" rx="18" fill="#111827"/>
-  <text x="64" y="86" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
-        font-size="64" font-weight="700" fill="#82aaff" text-anchor="middle">N</text>
-</svg>

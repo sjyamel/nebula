@@ -9,23 +9,55 @@
   <panel "flex-row items-center justify-between px-8 py-4 bg-white gap-6">
     <panel "flex-row items-center gap-2">
       <text "text-lg text-fuchsia-600">Welcome back,</text>
-      <text "text-lg text-slate-800">Yusee!</text>
+      <text "text-lg text-red-800">Yusee!</text>
     </panel>
     <panel "flex-row items-center grow bg-slate-100 rounded-full px-5 py-2 gap-2">
-      <icon "icon-search text-slate-400 w-5 h-5"/>
+      <label "for-search">
+        <image "tint src-icons/search.svg text-slate-400 w-5 h-5"/>
+      </label>
       <textinput "key-search grow text-slate-800 placeholder-What_are_you_looking_for?"/>
       <panel "px-5 py-2 rounded-full bg-fuchsia-500 to-sky-500 bg-gradient-r items-center justify-center" @on_click(on_search)>
         <text "text-white">Search</text>
       </panel>
     </panel>
-    <panel "w-10 h-10 rounded-full items-center justify-center" @on_click(on_settings)>
-      <icon "icon-gear text-slate-500 w-6 h-6"/>
+    <panel "w-10 h-10 rounded-full items-center justify-center" @on_click(on_toggle_settings_modal)>
+      <image "tint src-icons/gear.svg text-slate-500 w-6 h-6"/>
     </panel>
-    <panel "flex-col w-10 h-10 items-center justify-center" @on_click(on_notify)>
-      <icon "icon-bell text-slate-500 w-6 h-6"/>
+    <panel "flex-col w-10 h-10 items-center justify-center key-notifybtn" @on_click(on_notify)>
+      <image "tint src-icons/bell.svg text-slate-500 w-6 h-6"/>
       <panel "w-[10px] h-[10px] rounded-full bg-red-500 -mt-3 -ml-4" />
     </panel>
+    <tooltip "for-notifybtn x-1250 y-64">
+      <panel "bg-slate-800 rounded-lg px-3 py-2">
+        <text "text-white text-sm">3 new notifications</text>
+      </panel>
+    </tooltip>
   </panel>
+
+  # Settings modal (nebula1.0 Phase 4): a `collapse` whose child is
+  # `overlay`-styled -- see toolkit/ui/widget_tags.tr's tag_link()/
+  # tag_label() comments and toolkit/layout/flex.tr's own overlay comment
+  # for how the pieces fit. The gear button above toggles it open; the
+  # dimmed backdrop OR the Close button both toggle it shut. The dialog
+  # body itself has a no-op handler (on_dialog_body) purely to SWALLOW a
+  # click before it bubbles up to the backdrop's own close handler --
+  # without it, clicking the dialog's own title/text would close the
+  # modal, since neither has a handler of its own to stop there first.
+  <collapse "key-settingsmodal">
+    <panel "overlay bg-black opacity-50 items-center justify-center" @on_click(on_toggle_settings_modal)>
+      <panel "w-[380px] bg-white rounded-2xl p-6 gap-4 flex-col items-center shadow" @on_click(on_dialog_body)>
+        <text "text-lg text-slate-800">Settings</text>
+        <hr "text-slate-200 w-full"/>
+        <text "text-slate-500">Modal dialog example -- built from `collapse` + `overlay`, no new engine primitive beyond those two.</text>
+        <link "href-https://example.com/nebula-docs">
+          <text "text-sky-500">Learn more</text>
+        </link>
+        <panel "px-6 py-2 rounded-full bg-fuchsia-500 items-center justify-center" @on_click(on_toggle_settings_modal)>
+          <text "text-white">Close</text>
+        </panel>
+      </panel>
+    </panel>
+  </collapse>
 
   <panel "flex-row items-center gap-3 bg-slate-800 px-8 py-3">
     <tabitem "group-rooms value-0 sel-sky-500 sel-to-blue-600 rounded-full border border-slate-500 px-5 py-2 items-center justify-center">
@@ -48,23 +80,23 @@
   <panel "flex-row grow">
 
     <panel "flex-col w-20 bg-violet-600 to-pink-500 bg-gradient-b items-center py-8 gap-6">
-      <listitem "group-nav value-0 selected w-11 h-11 rounded-xl items-center justify-center">
-        <icon "icon-home text-white w-6 h-6"/>
+      <listitem "group-nav value-0 key-homenav0 selected w-11 h-11 rounded-xl items-center justify-center" @on_click(on_nav_home)>
+        <image "tint src-icons/house.svg text-white w-6 h-6"/>
       </listitem>
-      <listitem "group-nav value-1 w-11 h-11 rounded-xl items-center justify-center">
-        <icon "icon-user text-white w-6 h-6"/>
+      <listitem "group-nav value-1 key-homenav1 w-11 h-11 rounded-xl items-center justify-center" @on_click(on_nav_widgets)>
+        <image "tint src-icons/user.svg text-white w-6 h-6"/>
       </listitem>
-      <listitem "group-nav value-2 w-11 h-11 rounded-xl items-center justify-center">
-        <icon "icon-gear text-white w-6 h-6"/>
+      <listitem "group-nav value-2 key-homenav2 w-11 h-11 rounded-xl items-center justify-center" @on_click(on_nav_forms)>
+        <image "tint src-icons/gear.svg text-white w-6 h-6"/>
       </listitem>
-      <listitem "group-nav value-3 w-11 h-11 rounded-xl items-center justify-center">
-        <icon "icon-lock text-white w-6 h-6"/>
+      <listitem "group-nav value-3 key-homenav3 w-11 h-11 rounded-xl items-center justify-center" @on_click(on_nav_overlays)>
+        <image "tint src-icons/lock.svg text-white w-6 h-6"/>
       </listitem>
-      <listitem "group-nav value-4 w-11 h-11 rounded-xl items-center justify-center">
-        <icon "icon-help text-white w-6 h-6"/>
+      <listitem "group-nav value-4 key-homenav4 w-11 h-11 rounded-xl items-center justify-center" @on_click(on_nav_media)>
+        <image "tint src-icons/display.svg text-white w-6 h-6"/>
       </listitem>
-      <listitem "group-nav value-5 w-11 h-11 rounded-xl items-center justify-center">
-        <icon "icon-tv text-white w-6 h-6"/>
+      <listitem "group-nav value-5 key-homenav5 w-11 h-11 rounded-xl items-center justify-center" @on_click(on_nav_tabs)>
+        <image "tint src-icons/circle-question.svg text-white w-6 h-6"/>
       </listitem>
     </panel>
 
@@ -76,10 +108,10 @@
             <text "text-white">My messages</text>
             <panel "flex-row gap-3">
               <panel "w-12 h-9 rounded bg-amber-400 items-center justify-center">
-                <icon "icon-mail text-white w-6 h-5"/>
+                <image "tint src-icons/envelope.svg text-white w-6 h-5"/>
               </panel>
               <panel "w-12 h-9 rounded bg-amber-400 items-center justify-center">
-                <icon "icon-mail text-white w-6 h-5"/>
+                <image "tint src-icons/envelope.svg text-white w-6 h-5"/>
               </panel>
             </panel>
             <text "text-white">Things to do list</text>
@@ -134,7 +166,7 @@
         <panel "grow bg-white rounded-xl p-4 gap-3 flex-col items-center justify-center shadow" @on_click(on_card)>
           <text "text-slate-700">Front door</text>
           <iconring "bg-sky-500 w-20 h-20 items-center justify-center" @on_click(on_lock)>
-            <icon "icon-lock text-white w-7 h-7"/>
+            <image "tint src-icons/lock.svg text-white w-7 h-7"/>
           </iconring>
         </panel>
         <panel "grow bg-white rounded-xl p-4 gap-3 flex-col items-center justify-center shadow" @on_click(on_card)>
@@ -154,9 +186,45 @@
         </panel>
       </panel>
 
-      <panel "flex-row items-center gap-3 bg-white rounded-xl p-2 shadow">
-        <image "src-hero w-32 h-24 rounded" />
-        <text "text-slate-500">baked-image test</text>
+      <panel "flex-col md:flex-row gap-4">
+
+        <panel "flex-col grow bg-white rounded-xl shadow">
+          <panel "px-4 py-3 rounded-xl flex-row items-center justify-between" @on_click(on_toggle_dropdown)>
+            <text "text-slate-700">Active room: Living Room</text>
+            <text "text-slate-400">v</text>
+          </panel>
+          <collapse "key-roomdropdown">
+            <panel "flex-col border-t border-slate-100 p-2 gap-1">
+              <panel "flex-row items-center gap-3 p-2 rounded-lg">
+                <radio "group-droproom value-0 w-4 h-4"/>
+                <text "text-slate-700">Kitchen</text>
+              </panel>
+              <panel "flex-row items-center gap-3 p-2 rounded-lg">
+                <radio "group-droproom value-1 selected w-4 h-4"/>
+                <text "text-slate-700">Living Room</text>
+              </panel>
+              <panel "flex-row items-center gap-3 p-2 rounded-lg">
+                <radio "group-droproom value-2 w-4 h-4"/>
+                <text "text-slate-700">Bedroom</text>
+              </panel>
+            </panel>
+          </collapse>
+        </panel>
+
+        <panel "flex-col grow bg-white rounded-xl shadow">
+          <panel "px-4 py-3 rounded-xl flex-row items-center justify-between" @on_click(on_toggle_accordion)>
+            <text "text-slate-700">Device settings</text>
+            <text "text-slate-400">v</text>
+          </panel>
+          <collapse "key-devicesettings">
+            <panel "flex-col border-t border-slate-100 p-4 gap-2">
+              <text "text-slate-600">Brightness: 80%</text>
+              <text "text-slate-600">Auto-lock: On</text>
+              <text "text-slate-600">Notifications: Enabled</text>
+            </panel>
+          </collapse>
+        </panel>
+
       </panel>
 
     </panel>

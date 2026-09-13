@@ -311,19 +311,39 @@ extend Cmd:
         c.pixels = []
         return c
 
-    # RGBA, row-major, 4 bytes/pixel -- exactly scripts/bake-image.ps1's
-    # own `<name>_pixels()` output shape, passed straight through.
-    pub def image(x: int, y: int, w: int, h: int, pixels: List[u8], ambient: int) -> Cmd:
+    # `x/y/w/h` are the DESTINATION rect (wherever layout/Style put this
+    # node, at whatever size a `w-N h-N` token asked for); `src_w`/`src_h`
+    # (reusing `radius`/`border_w`, unused by every other image field) are
+    # the BAKED buffer's OWN pixel dimensions -- `pixels` is exactly
+    # scripts/bake-image.ps1's own `<name>_pixels()` output, src_w*src_h*4
+    # bytes long. These are deliberately TWO separate sizes: an author's
+    # `w-N h-N` almost never matches the source image's real aspect ratio
+    # exactly, so a renderer needs both to scale correctly instead of
+    # assuming pixels.length matches the destination rect (confirmed the
+    # hard way -- the web renderer's `new ImageData(bytes, w, h)` throws
+    # IndexSizeError the instant the two sizes disagree).
+    # `tint`: -1 (unset()) paints the baked RGB as-is (a photo/hero image
+    # -- tinting it would corrupt real colors an author never asked to
+    # change). Any other value RECOLORS every pixel the baked alpha
+    # covers to that flat color, alpha unchanged -- the `<image>` side of
+    # the SAME "colored like text" convention `<icon>` already
+    # established (see toolkit/ui/widget_tags.tr's `tint` token, an
+    # explicit author opt-in -- there is no way to tell "a photo" and "a
+    # monochrome icon someone downloaded" apart from the baked pixels
+    # alone, so this is never automatic). Reuses `stroke`, unused by
+    # every other cmd_image() field, the same way `radius`/`border_w`
+    # already carry src_w/src_h here.
+    pub def image(x: int, y: int, w: int, h: int, src_w: int, src_h: int, pixels: List[u8], ambient: int, tint: int) -> Cmd:
         mut c = Cmd()
         c.kind = cmd_image()
         c.x = x
         c.y = y
         c.w = w
         c.h = h
-        c.radius = 0
-        c.border_w = 0
+        c.radius = src_w
+        c.border_w = src_h
         c.fill = 0
-        c.stroke = 0
+        c.stroke = tint
         c.ambient = ambient
         c.text = ""
         c.alpha = 255

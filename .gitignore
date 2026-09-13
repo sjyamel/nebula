@@ -24,6 +24,7 @@ SDL2.dll
 *.png
 *.jpg
 *.jepg
+*.log
 main
 hello
 smoke_*

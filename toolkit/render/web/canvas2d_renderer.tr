@@ -34,6 +34,7 @@ from toolkit.render.renderer import Renderer
 from toolkit.render.caps import Caps
 from toolkit.text.font import Font
 from string.str import Str
+from toolkit.platform.browser import UrlOpener
 
 # Real alpha blending (the browser's own compositor) and hardware
 # compositing (every modern browser accelerates canvas 2D) -- see
@@ -55,12 +56,32 @@ extern "C":
     # for the exact JS, mirrored here only as the extern signature.
     def js_gradient_rect(x: c_int, y: c_int, w: c_int, h: c_int, radius: c_int, color_a: c_int, color_b: c_int, dir: c_int) -> void
     def js_arc_ring(cx: c_int, cy: c_int, r: c_int, ring_w: c_int, start_deg: c_int, sweep_deg: c_int, active: c_int, track: c_int) -> void
-    # nebula1.0 Phase 4: `ptr` points at `pixels`' own RGBA backing bytes
-    # (row-major, w*h*4 long) -- the host page's own implementation uses
-    # `ImageData`/`putImageData`, RGBA being that API's native pixel format
-    # (no conversion needed, unlike every other js_* call here which packs a
-    # 0xRRGGBB int).
-    def js_image_blit(x: c_int, y: c_int, w: c_int, h: c_int, ptr: Pointer[u8], len: c_int) -> void
+    # nebula1.0 Phase 4: `x/y/w/h` is the DESTINATION rect; `srcW`/`srcH` is
+    # the baked buffer's OWN pixel size (`ptr` points at exactly srcW*srcH*4
+    # RGBA bytes -- the host page's own implementation uses `ImageData`/
+    # `putImageData`, RGBA being that API's native pixel format, no
+    # conversion needed unlike every other js_* call here which packs a
+    # 0xRRGGBB int) -- see toolkit.render.scene's cmd_image() for why these
+    # are two separate sizes, not one.
+    # `tint`: -1 (unset()) = blit the baked RGB as-is; any other packed
+    # 0xRRGGBB recolors via the host page's own `source-in` compositing
+    # trick -- see cli/nebula.tr's host_page() for the actual JS.
+    def js_image_blit(x: c_int, y: c_int, w: c_int, h: c_int, src_w: c_int, src_h: c_int, ptr: Pointer[u8], len: c_int, tint: c_int) -> void
+    # nebula1.0 Phase 4: real Canvas2D clipping (`ctx.save()` + `ctx.rect(
+    # x,y,w,h)` + `ctx.clip()`), NOT a manual per-shape intersection --
+    # see toolkit.render.renderer's own comment on why this pair exists
+    # (every OTHER method here calls a js_* extern directly, bypassing the
+    # `c: Canvas` parameter's own clip entirely). `js_clip_pop` is a plain
+    # `ctx.restore()`, matching whatever `js_clip_push` most recently saved
+    # -- toolkit.ui.interp's exec_cmds always calls these in strict
+    # push/pop pairs (even nested), so save/restore's own stack discipline
+    # is exactly what's needed, no separate clip-rect bookkeeping here.
+    def js_clip_push(x: c_int, y: c_int, w: c_int, h: c_int) -> void
+    def js_clip_pop() -> void
+    # nebula1.0 Phase 4 (`<link>`): `window.open(url, '_blank', 'noopener')`
+    # -- see cli/nebula.tr's host_page() for the exact JS. Same ptr+len
+    # string-marshaling shape as js_fill_text above.
+    def js_open_url(ptr: Pointer[char], len: c_int) -> void
 
 pub class Canvas2DCanvas implements Canvas, Renderer:
     pub w: int
@@ -199,14 +220,40 @@ extend Canvas2DCanvas:
         unsafe:
             js_arc_ring(cx as c_int, cy as c_int, r as c_int, ring_w as c_int, start_deg as c_int, sweep_deg as c_int, active as c_int, track as c_int)
 
-    pub def image(self, c: Canvas, x: int, y: int, w: int, h: int, pixels: List[u8]) -> void:
-        if w <= 0 or h <= 0:
+    pub def image(self, c: Canvas, x: int, y: int, w: int, h: int, src_w: int, src_h: int, pixels: List[u8], tint: int) -> void:
+        if w <= 0 or h <= 0 or src_w <= 0 or src_h <= 0:
             return
         unsafe:
-            js_image_blit(x as c_int, y as c_int, w as c_int, h as c_int, pixels as Pointer[u8], len(pixels) as c_int)
+            js_image_blit(x as c_int, y as c_int, w as c_int, h as c_int, src_w as c_int, src_h as c_int, pixels as Pointer[u8], len(pixels) as c_int, tint as c_int)
+
+    pub def clip_push(self, c: Canvas, x: int, y: int, w: int, h: int) -> void:
+        unsafe:
+            js_clip_push(x as c_int, y as c_int, w as c_int, h as c_int)
+
+    pub def clip_pop(self, c: Canvas) -> void:
+        unsafe:
+            js_clip_pop()
 
 pub def canvas2d_renderer_of(c: Canvas2DCanvas) -> Renderer:
     return c
 
 pub def canvas2d_canvas_of(c: Canvas2DCanvas) -> Canvas:
     return c
+
+# nebula1.0 Phase 4 (`<link>`): the web target's UrlOpener -- see toolkit.
+# platform.browser's own header for why this lives HERE (one implementer
+# per file, not grouped with the other UrlOpener classes) and for why the
+# interface method is `launch`, not `open` (a real compiler gap the latter
+# name triggers). toolkit/ui/interp.tr's hit_test_widget calls it.
+pub class Canvas2DUrlOpener implements UrlOpener:
+    _unused: int
+
+extend Canvas2DUrlOpener:
+    pub def init() -> Canvas2DUrlOpener:
+        mut o = Canvas2DUrlOpener()
+        o._unused = 0
+        return o
+
+    pub def launch(self, url: str) -> void:
+        unsafe:
+            js_open_url(url as Pointer[char], Str.len(url) as c_int)

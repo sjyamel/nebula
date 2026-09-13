@@ -495,11 +495,23 @@ extend GlCanvas:
     # by any CLI-generated target today). Samples the first pixel's RGB as a
     # flat placeholder fill rather than decoding the whole buffer into a real
     # GL texture (a texture-upload path is a separate GL effort).
-    pub def image(self, c: Canvas, x: int, y: int, w: int, h: int, pixels: List[u8]) -> void:
+    pub def image(self, c: Canvas, x: int, y: int, w: int, h: int, src_w: int, src_h: int, pixels: List[u8], tint: int) -> void:
         mut col = 0x808080
-        if len(pixels) >= 3:
+        if tint >= 0:
+            col = tint
+        elif len(pixels) >= 3:
             col = rgb(pixels[0] as int, pixels[1] as int, pixels[2] as int)
         self.draw_shape(x, y, w, h, 0, col, 1.0 as f32)
+
+    # No-ops -- interface-compliance only, same reason as image()/
+    # gradient_rect()'s own comments just above (GlCanvas isn't reached by
+    # any CLI-generated target today; a real GL scissor-rect clip is a
+    # separate GL effort).
+    pub def clip_push(self, c: Canvas, x: int, y: int, w: int, h: int) -> void:
+        pass
+
+    pub def clip_pop(self, c: Canvas) -> void:
+        pass
 
     pub def text(self, c: Canvas, font: Font, txt: str, x: int, y: int, fg: int, bg: int) -> void:
         mut tex = self.tex_base

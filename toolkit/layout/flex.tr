@@ -19,7 +19,7 @@
 
 from toolkit.ui.ast import UiNode, read_node, max_depth
 from toolkit.ui.style import Style, StyleCache, dir_col, dir_grid, unset
-from toolkit.ui.widget_tags import tag_checkbox, tag_switch, tag_radio, tag_slider, tag_progress, tag_dial, tag_icon, tag_textinput, tag_image
+from toolkit.ui.widget_tags import tag_checkbox, tag_switch, tag_radio, tag_slider, tag_progress, tag_dial, tag_icon, tag_textinput, tag_image, tag_collapse, tag_hr, tag_tooltip
 from toolkit.ui.style import align_stretch, align_center, align_end, align_between
 from toolkit.ui.style import align_around, align_evenly
 from toolkit.ui.style import font_size_sm, font_size_lg
@@ -100,6 +100,34 @@ pub class LayoutBox:
     pub w_sel_bg:   int
     pub w_sel_bg2:  int
     pub w_placeholder: str
+    # nebula1.0 Phase 4 (label/link/tooltip): see toolkit/ui/widget_tags.tr's
+    # WidgetTokens.for_key/href for what these carry.
+    pub w_for:  str
+    pub w_href: str
+    # nebula1.0 Phase 4 (icon tinting): see toolkit/ui/widget_tags.tr's
+    # WidgetTokens.tint for what this carries and why it defaults false.
+    pub w_tint: bool
+    # nebula1.0 Phase 4 (collapse): the box's own NATURAL (fully-open)
+    # content height, computed by measure() exactly like any ordinary
+    # container's height would be -- stashed here BEFORE measure()
+    # overwrites `box.h` itself with the current eased open/closed value,
+    # since `emit_widget`'s tag_collapse() branch (toolkit/ui/interp.tr)
+    # needs the real open-target height to animate TOWARD, and by the time
+    # paint runs, `box.h` no longer holds it. Meaningless on any box that
+    # isn't `tag_collapse()`.
+    pub collapse_natural_h: int
+    # nebula1.0 Phase 4 (modal, built on collapse+overlay): the collapse's
+    # own OPEN/CLOSED bool, straight from state -- NOT derived from
+    # `box.h == 0` the way toolkit.ui.interp's hidden-subtree checks first
+    # tried. That proxy breaks for a modal specifically: a collapse whose
+    # ONLY child is `overlay`-styled has a natural content height of 0 (an
+    # overlay contributes nothing to its parent's own measured size, same
+    # exclusion as any other overlay child), so `collapse_natural_h` -- and
+    # therefore `box.h` after the eased-height override just below -- stays
+    # 0 whether the collapse is open OR closed. This field is what actually
+    # answers "is this collapse open", independent of what its children
+    # happen to size to. Meaningless on any box that isn't `tag_collapse()`.
+    pub collapse_open: bool
 
 extend LayoutBox:
     pub def init(kind: int, tag: str, text: str, event_name: str, handler: str, style: Style) -> LayoutBox:
@@ -126,6 +154,11 @@ extend LayoutBox:
         b.w_sel_bg = unset()
         b.w_sel_bg2 = unset()
         b.w_placeholder = ""
+        b.w_for = ""
+        b.w_href = ""
+        b.w_tint = false
+        b.collapse_natural_h = 0
+        b.collapse_open = false
         return b
 
     pub def contains(self, px: int, py: int) -> bool:
@@ -186,6 +219,14 @@ pub def build(node: Pointer[UiNode], cache: StyleCache, depth: int, path: str, v
             box.w_sel_bg = wt.sel_bg
             box.w_sel_bg2 = wt.sel_bg2
             box.w_placeholder = wt.placeholder
+            box.w_for = wt.for_key
+            box.w_href = wt.href
+            box.w_tint = wt.tint
+            # nebula1.0 Phase 4 (tooltip): auto-overlay -- see tag_tooltip()'s
+            # own comment on why an author never has to also type the
+            # `overlay` token by hand for this one tag.
+            if tag == tag_tooltip():
+                st.overlay = true
             if depth < max_depth():
                 mut i = 0
                 while i < len(kids):
@@ -259,6 +300,10 @@ def widget_intrinsic_w(tag: str) -> int:
     # just to satisfy layout), same as `icon` already expects; this is only
     # the no-token fallback, matching icon's own default.
     if tag == tag_image(): return 48
+    # hr: height-only default, same "leave WIDTH at 0" reasoning as
+    # slider/progress/textinput above -- an author sizes it with
+    # `grow`/`w-full` like anything else (almost always full-width, but
+    # this file doesn't assume that).
     return 0
 
 def widget_intrinsic_h(tag: str) -> int:
@@ -274,6 +319,8 @@ def widget_intrinsic_h(tag: str) -> int:
     # sizes it with `grow`/`w-full` like anything else.
     if tag == tag_textinput(): return 36
     if tag == tag_image(): return 48
+    # hr: a thin 2px divider bar by default, overridable with `h-N`.
+    if tag == tag_hr(): return 2
     return 0
 
 def is_measured_widget_tag(tag: str) -> bool:
@@ -286,9 +333,34 @@ def is_measured_widget_tag(tag: str) -> bool:
     if tag == tag_icon(): return true
     if tag == tag_textinput(): return true
     if tag == tag_image(): return true
+    if tag == tag_hr(): return true
     return false
 
-pub def measure(box: LayoutBox) -> void:
+# nebula1.0 Phase 4 (collapse): 0 if `key` was never written, matching
+# `Interpreter.state_get`'s own default-fallback shape -- a plain free
+# function here (not a method) because `state` is just the raw
+# `Dict[str,int]`, not an `Interpreter` (this file cannot import
+# toolkit.ui.interp -- see toolkit.layout.flex's own module comment; a
+# builtin `Dict[str,int]` needs no import at all, which is exactly why
+# THAT type, and not an Interpreter reference, is what got threaded
+# through measure() for this).
+def dict_get_default(d: Dict[str, int], key: str, default: int) -> int:
+    if key in d:
+        return d[key]
+    return default
+
+def b2i_local(b: bool) -> int:
+    if b:
+        return 1
+    return 0
+
+# `state` is `Interpreter.state` itself (the SAME Dict[str,int] every
+# other widget's click/focus state already lives in), threaded in READ-ONLY
+# so `tag_collapse()` boxes can size themselves by live state -- the one
+# case in this whole file where LAYOUT (not just paint) depends on
+# something that persists across frames. See collapse_natural_h's own
+# field comment for the two-height split this requires.
+pub def measure(box: LayoutBox, state: Dict[str, int]) -> void:
     if box.kind == kind_text():
         mut tw = Str.len(box.text) * glyph_w(box.style.font_size)
         mut th = glyph_h(box.style.font_size)
@@ -313,7 +385,7 @@ pub def measure(box: LayoutBox) -> void:
 
     mut i = 0
     while i < len(box.children):
-        measure(box.children[i])
+        measure(box.children[i], state)
         i = i + 1
 
     # Proposal v4 step E: a grid container sizes itself by a different rule
@@ -329,19 +401,32 @@ pub def measure(box: LayoutBox) -> void:
     mut nkids = len(box.children)
     mut is_col = box.style.dir == dir_col()
 
+    # nebula1.0 Phase 4 (overlay): an `overlay` child is skipped here
+    # entirely -- it contributes NOTHING to this box's own aggregate size,
+    # the same way CSS `position:absolute` takes a child out of normal
+    # flow for its parent's intrinsic-size purposes too. It was still
+    # measured (the loop above runs unconditionally), just not counted.
+    # `overlay_count` lets the gap/`nkids>1` math below use the count of
+    # children that ACTUALLY influence this box's size, not the raw
+    # child count.
     mut main = 0
     mut cross = 0
+    mut overlay_count = 0
     mut j = 0
     while j < nkids:
         mut c = box.children[j]
-        main = main + outer_main(c, is_col)
-        mut oc = outer_cross(c, is_col)
-        if oc > cross:
-            cross = oc
+        if c.style.overlay:
+            overlay_count = overlay_count + 1
+        else:
+            main = main + outer_main(c, is_col)
+            mut oc = outer_cross(c, is_col)
+            if oc > cross:
+                cross = oc
         j = j + 1
 
-    if nkids > 1:
-        main = main + gap * (nkids - 1)
+    mut flow_kids = nkids - overlay_count
+    if flow_kids > 1:
+        main = main + gap * (flow_kids - 1)
 
     mut content_w = cross
     mut content_h = main
@@ -358,6 +443,27 @@ pub def measure(box: LayoutBox) -> void:
         box.h = box.style.h
     else:
         box.h = content_h + box.style.pad_t + box.style.pad_b
+
+    # nebula1.0 Phase 4 (collapse): computed exactly like any other
+    # container above -- `box.h` at this point IS the natural, fully-open
+    # content height. Stash it (emit_widget's tag_collapse() branch needs
+    # it as the animation TARGET, and by the time paint runs, box.h below
+    # has already been overwritten), then replace box.h with the CURRENT
+    # eased value from state -- written there by that same paint branch
+    # last frame via anim_toward, so layout always reads "yesterday's"
+    # animated height, never a hard 0/full snap. A brand new collapse node
+    # (key not in state yet) defaults to `target` -- already fully open or
+    # closed on its very first frame, matching anim_toward's own "unset
+    # key starts AT target" convention, so nothing pops in at the wrong
+    # size before the first real paint.
+    if box.tag == tag_collapse():
+        box.collapse_natural_h = box.h
+        mut open = dict_get_default(state, box.node_key, b2i_local(box.w_checked)) != 0
+        box.collapse_open = open
+        mut target = 0
+        if open:
+            target = box.collapse_natural_h
+        box.h = dict_get_default(state, box.node_key + "#h", target)
 
 def measure_grid(box: LayoutBox) -> void:
     mut cols = box.style.grid_cols
@@ -410,7 +516,7 @@ def measure_grid(box: LayoutBox) -> void:
         box.h = content_h + box.style.pad_t + box.style.pad_b
 
 # box.x/box.y are already set by place() before it dispatches here.
-def place_grid(box: LayoutBox) -> void:
+def place_grid(box: LayoutBox, root_w: int, root_h: int) -> void:
     mut nkids = len(box.children)
     mut cols = box.style.grid_cols
     if cols < 1:
@@ -447,7 +553,7 @@ def place_grid(box: LayoutBox) -> void:
         while ci < cend:
             mut c = box.children[ci]
             c.w = track_w
-            place(c, cursor_x, cursor_y)
+            place(c, cursor_x, cursor_y, root_w, root_h)
             cursor_x = cursor_x + track_w + gap_x
             ci = ci + 1
         cursor_y = cursor_y + row_h + gap_y
@@ -455,7 +561,13 @@ def place_grid(box: LayoutBox) -> void:
 
 # --- pass 3: place ---------------------------------------------------------
 
-pub def place(box: LayoutBox, x: int, y: int) -> void:
+# `root_w`/`root_h` are the WHOLE page's own size (threaded down from
+# layout_tree_at's own vw/vh, unchanged at every recursion level) -- an
+# `overlay` child needs them to center itself on the PAGE, not on its
+# immediate parent (see this function's own overlay branch below), the
+# one case in this whole file where a child's position depends on
+# something other than its parent's content box.
+pub def place(box: LayoutBox, x: int, y: int, root_w: int, root_h: int) -> void:
     box.x = x
     box.y = y
 
@@ -465,7 +577,7 @@ pub def place(box: LayoutBox, x: int, y: int) -> void:
 
     # Proposal v4 step E: same reason as measure()'s own dispatch above.
     if box.style.dir == dir_grid():
-        place_grid(box)
+        place_grid(box, root_w, root_h)
         return
 
     mut gap = main_gap(box)
@@ -494,18 +606,27 @@ pub def place(box: LayoutBox, x: int, y: int) -> void:
             cf.h = inner_h * cf.style.h_num / cf.style.h_den
         f = f + 1
 
+    # nebula1.0 Phase 4 (overlay): excluded from `used`/`growers` too --
+    # same reasoning as measure()'s own matching loop (an overlay child is
+    # out of normal flow for ITS PARENT's purposes entirely, on both
+    # passes). `flow_kids2` mirrors measure()'s own `flow_kids`.
     mut used = 0
     mut growers = 0
+    mut overlay_count2 = 0
     mut i = 0
     while i < nkids:
         mut c = box.children[i]
-        used = used + outer_main(c, is_col)
-        if c.style.grow > 0:
-            growers = growers + 1
+        if c.style.overlay:
+            overlay_count2 = overlay_count2 + 1
+        else:
+            used = used + outer_main(c, is_col)
+            if c.style.grow > 0:
+                growers = growers + 1
         i = i + 1
 
-    if nkids > 1:
-        used = used + gap * (nkids - 1)
+    mut flow_kids2 = nkids - overlay_count2
+    if flow_kids2 > 1:
+        used = used + gap * (flow_kids2 - 1)
 
     mut extra = 0
     if growers > 0:
@@ -534,17 +655,20 @@ pub def place(box: LayoutBox, x: int, y: int) -> void:
     elif box.style.justify == align_between():
         # First child flush to the start, last flush to the end. With one
         # child there is no gap to put anything in, so it stays at the start.
-        if nkids > 1:
-            spread = slack / (nkids - 1)
+        # Counts flow children only (flow_kids2) -- an overlay sibling isn't
+        # part of this row/column's gap math at all.
+        if flow_kids2 > 1:
+            spread = slack / (flow_kids2 - 1)
     elif box.style.justify == align_around():
         # Each child gets equal space on both sides, so the outer edges get
         # half of what sits between any two children.
-        spread = slack / nkids
+        if flow_kids2 > 0:
+            spread = slack / flow_kids2
         lead = spread / 2
     elif box.style.justify == align_evenly():
         # Every space -- both edges and every gap between children -- is the
-        # same size, so there are nkids+1 of them.
-        spread = slack / (nkids + 1)
+        # same size, so there are flow_kids2+1 of them.
+        spread = slack / (flow_kids2 + 1)
         lead = spread
 
     mut cursor_x = box.x + box.style.pad_l
@@ -557,6 +681,48 @@ pub def place(box: LayoutBox, x: int, y: int) -> void:
     mut k = 0
     while k < nkids:
         mut c2 = box.children[k]
+
+        # nebula1.0 Phase 4 (overlay): positioned relative to the WHOLE
+        # PAGE (root_w/root_h), not this box's own content rect -- centered
+        # by default, or at an explicit pixel position if `x-N`/`y-N` were
+        # given (see Style.overlay_x/_y's own comment). Never touches
+        # cursor_x/cursor_y: the next FLOW child positions exactly as if
+        # this one weren't here at all.
+        if c2.style.overlay:
+            # A modal's dimmed backdrop is authored with NO size token at
+            # all (`<panel "overlay bg-black opacity-50">`, nothing else)
+            # and still needs to cover the whole page -- CSS's own
+            # `position:fixed; inset:0` default. Neither an explicit `w-N`/
+            # `h-N` NOR a fractional `w-full`/`h-full` (which would resolve
+            # against THIS box's own inner_w/inner_h, not the page -- wrong
+            # for an overlay nested under a `<collapse>` that isn't itself
+            # page-sized) can express "size = the page" today, so this is
+            # the one remaining default: no size token on an overlay child
+            # means root-sized, not zero-sized.
+            # `tag_tooltip()` is excluded from this default -- a tooltip's
+            # natural size (whatever its own content, e.g. a small dark
+            # pill, measures to) is exactly what it wants, unlike a modal
+            # backdrop. Without this exclusion a `<tooltip>` with no `w-`/
+            # `h-` of its own (the normal, expected way to author one) grew
+            # to the full page height, and its inner content panel then
+            # STRETCHED to fill that (the default cross-axis alignment for
+            # a box with no explicit cross size is `stretch`) -- visibly, a
+            # tooltip that spans from its trigger all the way to the
+            # bottom of the window on hover.
+            if c2.tag != tag_tooltip():
+                if c2.style.w < 0 and c2.style.w_den <= 0:
+                    c2.w = root_w
+                if c2.style.h < 0 and c2.style.h_den <= 0:
+                    c2.h = root_h
+            mut ox = (root_w - c2.w) / 2
+            mut oy = (root_h - c2.h) / 2
+            if c2.style.overlay_x != unset():
+                ox = c2.style.overlay_x
+            if c2.style.overlay_y != unset():
+                oy = c2.style.overlay_y
+            place(c2, ox, oy, root_w, root_h)
+            k = k + 1
+            continue
 
         if c2.style.grow > 0:
             if is_col:
@@ -587,15 +753,15 @@ pub def place(box: LayoutBox, x: int, y: int) -> void:
                 cross_off = cross_slack
 
         if is_col:
-            place(c2, cursor_x + cross_off + c2.style.mar_l, cursor_y + c2.style.mar_t)
+            place(c2, cursor_x + cross_off + c2.style.mar_l, cursor_y + c2.style.mar_t, root_w, root_h)
             cursor_y = cursor_y + outer_main(c2, is_col) + gap + spread
         else:
-            place(c2, cursor_x + c2.style.mar_l, cursor_y + cross_off + c2.style.mar_t)
+            place(c2, cursor_x + c2.style.mar_l, cursor_y + cross_off + c2.style.mar_t, root_w, root_h)
             cursor_x = cursor_x + outer_main(c2, is_col) + gap + spread
         k = k + 1
 
-pub def layout_tree(node: Pointer[UiNode], cache: StyleCache, vw: int, vh: int) -> LayoutBox:
-    return layout_tree_at(node, cache, 0, 0, vw, vh)
+pub def layout_tree(node: Pointer[UiNode], cache: StyleCache, vw: int, vh: int, state: Dict[str, int]) -> LayoutBox:
+    return layout_tree_at(node, cache, 0, 0, vw, vh, state)
 
 # The same pipeline, but into a SUB-RECTANGLE of the canvas rather than the
 # whole of it.
@@ -612,15 +778,29 @@ pub def layout_tree(node: Pointer[UiNode], cache: StyleCache, vw: int, vh: int) 
 # placing it there gives boxes with correct ABSOLUTE coordinates -- which
 # matters because hit-testing walks this same tree, so shifting the painted
 # output afterwards instead would have left dispatch() testing the wrong space.
-pub def layout_tree_at(node: Pointer[UiNode], cache: StyleCache, x: int, y: int, vw: int, vh: int) -> LayoutBox:
+pub def layout_tree_at(node: Pointer[UiNode], cache: StyleCache, x: int, y: int, vw: int, vh: int, state: Dict[str, int]) -> LayoutBox:
     mut root = build(node, cache, 0, "0", vw)
-    measure(root)
-    # The root fills the given box unless it asked for a specific size.
+    measure(root, state)
+    # The root fills the given box unless it asked for a specific size --
+    # but "fills" only ever means GROWING up to the viewport, never
+    # shrinking back down: `measure()` already computed the root's own
+    # NATURAL content height (bottom-up, from its children, same as any
+    # container), and if that is already taller than `vh`, forcing it down
+    # to `vh` is exactly what silently discarded the bottom of every page
+    # taller than one screen -- there was no way to scroll to it, because
+    # layout itself never gave it anywhere to exist. A page that fits
+    # keeps behaving exactly as before (root.h == vh either way); a page
+    # that doesn't now reports its real height upward, which is what lets
+    # nebula1.0 Phase 4's web host (cli/nebula.tr) grow the canvas/page
+    # and hand scrolling to the browser's own native mechanism.
     if root.style.w < 0:
         root.w = vw
     if root.style.h < 0:
-        root.h = vh
-    place(root, x, y)
+        if root.h < vh:
+            root.h = vh
+    # vw/vh, not root.w/root.h -- an overlay centers on the actual page
+    # viewport even if the root itself asked for a narrower explicit width.
+    place(root, x, y, vw, vh)
     return root
 
 pub def dump_layout(box: LayoutBox, indent: int) -> void:
