@@ -1,0 +1,35 @@
+# Handlers for app/overlays/overlays.nbl.
+
+from toolkit.types import Event, EventHandler
+from toolkit.ui.interp import Interpreter, register_handler, CollapseToggleHandler
+from toolkit.ui.router import Router
+from app.nav import register_nav_handlers
+
+# Swallows a click on the demo dialog's own body -- see app/home/home.tr's
+# Say class (the same shape) and home.nbl's own comment on why a modal's
+# dialog needs a no-op handler of its own.
+pub class Noop implements EventHandler:
+    _unused: int
+
+extend Noop:
+    pub def init() -> Noop:
+        mut h = Noop()
+        h._unused = 0
+        return h
+
+    pub def handle(self, e: Event) -> void:
+        pass
+
+pub def overlays_register_all(it: Interpreter, router: Router) -> void:
+    register_nav_handlers(it, router)
+    register_handler(it, "on_toggle_demo_modal", CollapseToggleHandler.init(it, "K:demomodal"))
+    register_handler(it, "on_demo_dialog_body", Noop.init())
+    # nebula1.0 Phase 4 (tooltip): a bare `key-...` token alone gives this
+    # panel NO `event_name` -- emit()'s hover tracking (is_hot = box.
+    # event_name != "" and box.contains(...)) only runs for a node that
+    # HAS one, so without a handler here the trigger's own "#hover" key
+    # never leaves 0 and the tooltip below it can never show, no matter
+    # where the mouse is. Same reasoning as home.tr's own `on_card` (a
+    # near-silent handler whose only real job is giving a node an
+    # event_name so hover feedback activates) -- this one does nothing.
+    register_handler(it, "on_tooltip_trigger_noop", Noop.init())

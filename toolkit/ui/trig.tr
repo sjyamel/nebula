@@ -1,0 +1,38 @@
+# toolkit.ui.trig — integer sin/cos, ×1000 fixed point.
+#
+# Nothing in this toolkit's own math (std/math/int.tr) or anywhere else in
+# the repo computes a trig function -- every existing shape is either
+# axis-aligned or a full circle, neither of which ever needed an angle.
+# toolkit.ui.interp's arc_ring (a partial ring "gauge" sweep) is the first
+# shape that does. No floats: same "no FPU dependency" rule
+# toolkit.ui.interp's own analytic_coverage documents for the bare-metal/
+# UEFI targets this toolkit also builds for -- a 91-entry quarter-wave
+# lookup table (0..90 degrees, sin(deg)*1000 rounded to the nearest int)
+# plus quadrant mirroring covers the full circle at better than 0.1%
+# error, more than enough for a decorative gauge ring.
+
+# sin(0..90) * 1000, one entry per whole degree.
+def sin_q1() -> List[int]:
+    return [0, 17, 35, 52, 70, 87, 105, 122, 139, 156, 174, 191, 208, 225, 242, 259, 276, 292, 309, 326, 342, 358, 375, 391, 407, 423, 438, 454, 469, 485, 500, 515, 530, 545, 559, 574, 588, 602, 616, 629, 643, 656, 669, 682, 695, 707, 719, 731, 743, 755, 766, 777, 788, 799, 809, 819, 829, 839, 848, 857, 866, 875, 883, 891, 899, 906, 914, 921, 927, 934, 940, 946, 951, 956, 961, 966, 970, 974, 978, 982, 985, 988, 990, 993, 995, 996, 998, 999, 999, 1000, 1000]
+
+def norm_deg(deg: int) -> int:
+    mut d = deg % 360
+    if d < 0:
+        d = d + 360
+    return d
+
+# sin(deg) * 1000, deg any integer (normalized mod 360 first).
+pub def sin1000(deg: int) -> int:
+    mut d = norm_deg(deg)
+    mut table = sin_q1()
+    if d <= 90:
+        return table[d]
+    if d <= 180:
+        return table[180 - d]
+    if d <= 270:
+        return 0 - table[d - 180]
+    return 0 - table[360 - d]
+
+# cos(deg) * 1000 -- cos(x) == sin(x + 90), reuses the same table.
+pub def cos1000(deg: int) -> int:
+    return sin1000(deg + 90)

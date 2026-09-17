@@ -1,0 +1,9 @@
+# Handlers for app/forms/forms.nbl.
+
+from toolkit.ui.interp import Interpreter, register_handler, CollapseToggleHandler
+from toolkit.ui.router import Router
+from app.nav import register_nav_handlers
+
+pub def forms_register_all(it: Interpreter, router: Router) -> void:
+    register_nav_handlers(it, router)
+    register_handler(it, "on_toggle_demo_dropdown", CollapseToggleHandler.init(it, "K:plandropdown"))

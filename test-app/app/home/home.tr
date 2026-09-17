@@ -1,0 +1,30 @@
+# Handlers for app/home/home.nbl.
+#
+# The contract is one function: `register_all(it)`. Nebula never scans this
+# file for handler names -- a convention the compiler checks beats a regex
+# that guesses -- so anything you want reachable from markup has to be
+# registered here. A page may also export `on_frame(canvas, w, h, mx, my,
+# buttons, key, wheel)`, called every frame while this page is active, for
+# anything the markup tree alone can't draw (see cli/codegen.tr's header).
+#
+# A handler is a class implementing EventHandler rather than a function,
+# which also gives it somewhere to keep state.
+
+from toolkit.types import Event, EventHandler
+from toolkit.ui.interp import Interpreter, register_handler
+
+pub class Say implements EventHandler:
+    pub label: str
+
+extend Say:
+    pub def init(label: str) -> Say:
+        mut h = Say()
+        h.label = label
+        return h
+
+    pub def handle(self, e: Event) -> void:
+        print("[handler] " + self.label + " at (" + e.x.to_str() + "," + e.y.to_str() + ")")
+
+pub def register_all(it: Interpreter) -> void:
+    register_handler(it, "on_ok", Say.init("OK"))
+    register_handler(it, "on_cancel", Say.init("CANCEL"))

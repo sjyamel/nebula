@@ -1,0 +1,75 @@
+# Media showcase -- part of the SPA sidebar nav (nebula1.0 Phase 4). See
+# app/widgets/widgets.nbl's own header for why the chrome below is
+# duplicated per page rather than shared.
+#
+# Compares the two icon sources nebula now supports side by side: custom
+# downloaded SVG icons (baked + tinted at build time, via tausvg) and the
+# toolkit's own built-in hand-drawn vector set (always available, no
+# baking step, the one that still works on bare-metal/UEFI targets that
+# skip the asset pipeline entirely).
+
+<panel "flex-col w-full h-full bg-slate-50">
+
+  <panel "flex-row items-center justify-between px-8 py-4 bg-white gap-6">
+    <text "text-lg text-slate-800">Media</text>
+  </panel>
+
+  <panel "flex-row grow">
+
+    <panel "flex-col w-20 bg-violet-600 to-pink-500 bg-gradient-b items-center py-8 gap-6">
+      <listitem "group-nav value-0 key-medianav0 w-11 h-11 rounded-xl items-center justify-center" @on_click(on_nav_home)>
+        <image "tint src-icons/house.svg text-white w-6 h-6"/>
+      </listitem>
+      <listitem "group-nav value-1 key-medianav1 w-11 h-11 rounded-xl items-center justify-center" @on_click(on_nav_widgets)>
+        <image "tint src-icons/user.svg text-white w-6 h-6"/>
+      </listitem>
+      <listitem "group-nav value-2 key-medianav2 w-11 h-11 rounded-xl items-center justify-center" @on_click(on_nav_forms)>
+        <image "tint src-icons/gear.svg text-white w-6 h-6"/>
+      </listitem>
+      <listitem "group-nav value-3 key-medianav3 w-11 h-11 rounded-xl items-center justify-center" @on_click(on_nav_overlays)>
+        <image "tint src-icons/lock.svg text-white w-6 h-6"/>
+      </listitem>
+      <listitem "group-nav value-4 key-medianav4 selected w-11 h-11 rounded-xl items-center justify-center" @on_click(on_nav_media)>
+        <image "tint src-icons/display.svg text-white w-6 h-6"/>
+      </listitem>
+      <listitem "group-nav value-5 key-medianav5 w-11 h-11 rounded-xl items-center justify-center" @on_click(on_nav_tabs)>
+        <image "tint src-icons/circle-question.svg text-white w-6 h-6"/>
+      </listitem>
+    </panel>
+
+    <panel "flex-col grow p-8 gap-6">
+      <text "text-2xl text-slate-800">Media</text>
+      <panel "bg-white rounded-xl p-6 gap-4 flex-col shadow">
+        <text "text-slate-600">Custom downloaded icons (Font Awesome Free, baked + tinted at build time)</text>
+        <panel "flex-row gap-5">
+          <image "tint src-icons/house.svg text-slate-700 w-8 h-8"/>
+          <image "tint src-icons/user.svg text-slate-700 w-8 h-8"/>
+          <image "tint src-icons/gear.svg text-slate-700 w-8 h-8"/>
+          <image "tint src-icons/lock.svg text-slate-700 w-8 h-8"/>
+          <image "tint src-icons/bell.svg text-slate-700 w-8 h-8"/>
+          <image "tint src-icons/envelope.svg text-slate-700 w-8 h-8"/>
+          <image "tint src-icons/search.svg text-slate-700 w-8 h-8"/>
+          <image "tint src-icons/display.svg text-slate-700 w-8 h-8"/>
+          <image "tint src-icons/circle-question.svg text-slate-700 w-8 h-8"/>
+        </panel>
+        <hr "text-slate-200 w-full"/>
+        <text "text-slate-600">Built-in vector icons (no baking step, works on bare-metal/UEFI too)</text>
+        <panel "flex-row gap-5">
+          <icon "icon-home text-slate-700 w-8 h-8"/>
+          <icon "icon-user text-slate-700 w-8 h-8"/>
+          <icon "icon-gear text-slate-700 w-8 h-8"/>
+          <icon "icon-lock text-slate-700 w-8 h-8"/>
+          <icon "icon-bell text-slate-700 w-8 h-8"/>
+          <icon "icon-mail text-slate-700 w-8 h-8"/>
+          <icon "icon-search text-slate-700 w-8 h-8"/>
+          <icon "icon-tv text-slate-700 w-8 h-8"/>
+          <icon "icon-help text-slate-700 w-8 h-8"/>
+        </panel>
+        <hr "text-slate-200 w-full"/>
+        <link "href-https://fontawesome.com/license/free">
+          <text "text-sky-500">Icons by Font Awesome Free -- CC BY 4.0 / MIT License</text>
+        </link>
+      </panel>
+    </panel>
+  </panel>
+</panel>

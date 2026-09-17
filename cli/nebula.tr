@@ -3,7 +3,7 @@
 #   nebula init <name>        scaffold a project
 #   nebula build --<target>   generate + compile
 #   nebula run   --<target>   build, then launch
-#   nebula targets            list platforms
+#   nebula targets             list platforms
 #
 # Written in Tauraro, which was not a foregone conclusion: it needed the
 # stdlib to be able to walk directories and spawn processes, and the plan
@@ -31,10 +31,21 @@ extern "C":
     def _tr_get_argc() -> int
     def _tr_get_arg(n: int) -> str
 from string.str import Str
-from cli.config import Config, load_config, target_from_name, target_name
+from cli.config import Config, ImageEntry, load_config, target_from_name, target_name
 from cli.config import target_hosted, target_desktop, target_web, target_uefi, target_bare
 from cli.config import target_unknown, all_target_names, is_freestanding
 from cli.codegen import generate
+# nebula1.0 Phase 4 (`.svg` assets): bake_images() rasterizes an SVG asset
+# in-process, via a plain Tauraro function call -- no subprocess, no
+# system/native dependency (see tausvg's own header for why: `.png`/
+# `.jpg`/etc. still go through bake-image.ps1's GDI+ pipeline below
+# unchanged, that dependency was never removed, but SVG never needed one
+# in the first place once a pure-Tauraro rasterizer existed). Resolved
+# via TAURARO_PATH pointing at the tauProject packages root
+# (`<base>/tausvg/src/tausvg.tr`) -- set once, User environment scope,
+# the same resolution convention every sibling tauProject package uses.
+from tausvg import rasterize_svg_file, RasterResult
+from core.string import StringBuilder
 
 def usage() -> void:
     print("nebula -- a cross-platform GUI engine")
@@ -69,19 +80,19 @@ def say(s: str) -> void:
 def fail(s: str) -> void:
     print("error: " + s)
 
-# --- init ------------------------------------------------------------------
+# --- init --------------------------------------------------------------
 
 def scaffold_conf(name: str) -> str:
     mut s = "# nebula.conf -- one key = value per line, # for comments.\n"
     s = s + "name    = " + name + "\n"
     s = s + "width   = 900\n"
     s = s + "height  = 560\n"
-    s = s + "entry   = app/page.ui\n"
-    s = s + "handlers = app/page.tr\n"
+    s = s + "page_dir = app\n"
+    s = s + "pages   = home\n"
     s = s + "bg      = #0F172A\n"
     return s
 
-def scaffold_page_ui() -> str:
+def scaffold_home_nbl() -> str:
     mut s = "# The UI is data. Edit this file and re-run -- on hosted and desktop it is\n"
     s = s + "# read at runtime, so no rebuild is needed. Class strings are Tailwind:\n"
     s = s + "# numbers are scale steps, so p-6 is 24px, not 6px.\n\n"
@@ -101,13 +112,15 @@ def scaffold_page_ui() -> str:
     s = s + "</panel>\n"
     return s
 
-def scaffold_page_tr() -> str:
-    mut s = "# Handlers for app/page.ui.\n"
+def scaffold_home_tr() -> str:
+    mut s = "# Handlers for app/home/home.nbl.\n"
     s = s + "#\n"
     s = s + "# The contract is one function: `register_all(it)`. Nebula never scans this\n"
     s = s + "# file for handler names -- a convention the compiler checks beats a regex\n"
     s = s + "# that guesses -- so anything you want reachable from markup has to be\n"
-    s = s + "# registered here.\n"
+    s = s + "# registered here. A page may also export `on_frame(canvas, w, h, mx, my,\n"
+    s = s + "# buttons, key, wheel)`, called every frame while this page is active, for\n"
+    s = s + "# anything the markup tree alone can't draw (see cli/codegen.tr's header).\n"
     s = s + "#\n"
     s = s + "# A handler is a class implementing EventHandler rather than a function,\n"
     s = s + "# which also gives it somewhere to keep state.\n\n"
@@ -139,15 +152,21 @@ def cmd_init(name: str) -> int:
     root.make()
     mut app = Dir.init(name + "/app")
     app.make()
+    mut home = Dir.init(name + "/app/home")
+    home.make()
 
     File.write_text(name + "/nebula.conf", scaffold_conf(name))
-    File.write_text(name + "/app/page.ui", scaffold_page_ui())
-    File.write_text(name + "/app/page.tr", scaffold_page_tr())
+    File.write_text(name + "/app/home/home.nbl", scaffold_home_nbl())
+    File.write_text(name + "/app/home/home.tr", scaffold_home_tr())
 
     say("created " + name + "/")
     say("  nebula.conf")
-    say("  app/page.ui      the UI, as data")
-    say("  app/page.tr      handlers, via register_all(it)")
+    say("  app/home/home.nbl    the UI, as data")
+    say("  app/home/home.tr     handlers, via register_all(it)")
+    say("")
+    say("add another page: mkdir app/settings, write app/settings/settings.nbl")
+    say("+.tr, then add it to nebula.conf's `pages = home, settings` line and")
+    say("navigate to it (toolkit.ui.router.Router.navigate) from any handler.")
     say("")
     say("next:")
     say("  cd " + name)
@@ -156,29 +175,14 @@ def cmd_init(name: str) -> int:
     say("  nebula run --web        # a browser tab")
     return 0
 
-# --- build -----------------------------------------------------------------
+# --- build ---------------------------------------------------------------
 
-# Writes the generated entry point and returns its path, or "" on failure.
 def emit_entry(cfg: Config, target: int) -> str:
     mut out = Dir.init(".nebula")
     if not out.exists():
         out.make()
 
-    mut markup = ""
-    if is_freestanding(target):
-        # No filesystem on these tiers, so the markup is baked in at build
-        # time rather than read at runtime.
-        markup = File.read_text(cfg.entry)
-        if markup == "":
-            fail("cannot read " + cfg.entry)
-            return ""
-
-    mut has_handlers = false
-    if cfg.handlers != "":
-        if File.read_text(cfg.handlers) != "":
-            has_handlers = true
-
-    mut src = generate(cfg, target, markup, has_handlers)
+    mut src = generate(cfg, target)
     if src == "":
         fail("no generator for target " + target_name(target))
         return ""
@@ -187,34 +191,6 @@ def emit_entry(cfg: Config, target: int) -> str:
     File.write_text(path, src)
     return path
 
-# tauraroc always emits its C into ./build, and REUSES whatever is there. A
-# previous build of a different program leaves modules behind that the next
-# one happily compiles and links -- which surfaces either as errors naming
-# types the current program never mentions, or, worse, as a binary that
-# silently runs the PREVIOUS program. Both happened while building this CLI.
-# Dir.remove() will not do it: it does not recurse.
-# Collects every emitted .c, RECURSIVELY. tauraroc puts most modules at the
-# top of build/ but drops std sources under build/include/... -- exactly one
-# file in a typical build, which is enough to fail the link with a pile of
-# undefined StringBuilder_* symbols if the walk is not recursive.
-def collect_c(dir: str, acc: str) -> str:
-    mut d = Dir.init(dir)
-    if not d.exists():
-        return acc
-    mut out = acc
-    mut e = d.list()
-    mut i = 0
-    while i < len(e):
-        mut nm = e[i]
-        mut path = dir + "/" + nm
-        mut n = Str.len(nm)
-        if n > 2 and Str.slice(nm, n - 2, n) == ".c":
-            out = out + " " + path
-        else:
-            out = collect_c(path, out)
-        i = i + 1
-    return out
-
 def clean_build_dir() -> void:
     Process.system("powershell -NoProfile -Command \"Remove-Item build -Recurse -Force -ErrorAction SilentlyContinue\"")
 
@@ -222,12 +198,207 @@ def clean_build_dir() -> void:
 def launch(path: str) -> str:
     return "powershell -NoProfile -Command \"& '" + path + "'\""
 
+# The directory nebula.exe itself was invoked from, so a resource that
+# ships ALONGSIDE it (scripts/bake-image.ps1) can be found regardless of
+# the CALLER's own current directory (an app being built typically lives
+# outside this repo entirely). `_tr_get_arg(0)` is argv[0] -- how it was
+# actually invoked, which is a real path (relative or absolute) whenever
+# invoked as `nebula.exe`/`./nebula.exe`/a full path, though not when
+# resolved bare through PATH (no separator in argv[0] at all; falls back
+# to "." -- the existing CWD-relative scripts/... calls this doesn't touch
+# yet have exactly that same assumption already). Scans for the LAST `/`
+# OR `\` by codepoint rather than a string literal search, because a
+# literal backslash cannot currently be written in a Tauraro string at all
+# (bugs.txt #8, the same limitation launch()'s own comment works around).
+def exe_dir() -> str:
+    mut p = _tr_get_arg(0)
+    mut n = Str.len(p)
+    mut cut = 0 - 1
+    mut i = 0
+    while i < n:
+        mut c = Str.char_at(p, i)
+        if c == 47 or c == 92:
+            cut = i
+        i = i + 1
+    if cut <= 0:
+        return "."
+    return Str.slice(p, 0, cut)
+
 def run_cmd(label: str, cmd: str) -> bool:
     mut rc = Process.system(cmd)
     if rc != 0:
         fail(label + " failed (exit " + rc.to_str() + ")")
         return false
     return true
+
+# True for a file extension this pipeline can actually bake -- either
+# bake-image.ps1's own GDI+ coverage (System.Drawing.Bitmap), or `.svg`
+# via tausvg (see bake_images()'s own branch for which path each takes).
+def is_image_ext(name: str) -> bool:
+    mut lower = Str.to_lower(name)
+    if Str.ends_with(lower, ".png"): return true
+    if Str.ends_with(lower, ".jpg"): return true
+    if Str.ends_with(lower, ".jpeg"): return true
+    if Str.ends_with(lower, ".bmp"): return true
+    if Str.ends_with(lower, ".gif"): return true
+    if Str.ends_with(lower, ".svg"): return true
+    return false
+
+def is_svg_ext(name: str) -> bool:
+    return Str.ends_with(Str.to_lower(name), ".svg")
+
+# Every character outside [a-zA-Z0-9] becomes `_` -- turns a discovered
+# asset's relative path ("hero-img.jpg", "icons/logo.png") into a valid
+# Tauraro identifier for its baked function names. See ImageEntry's own
+# comment for why this is a SEPARATE value from the path markup actually
+# uses.
+def sanitize_ident(s: str) -> str:
+    mut out = ""
+    mut n = Str.len(s)
+    mut i = 0
+    while i < n:
+        mut c = Str.char_at(s, i)
+        mut ok = (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122)
+        if ok:
+            out = out + Str.slice(s, i, i + 1)
+        else:
+            out = out + "_"
+        i = i + 1
+    return out
+
+# Recursive walk of `base` (the configured assets dir), `sub` the path
+# accumulated so far (relative to `base`, "" at the top). `seen` catches
+# two different files sanitizing to the same identifier (e.g.
+# "hero-img.jpg" and "hero_img.jpg" both become "hero_img_jpg") -- a real
+# but rare collision this fails loudly on, rather than silently letting
+# the second bake overwrite the first's generated module.
+def scan_assets_into(base: str, sub: str, out: List[ImageEntry], seen: Dict[str, str]) -> bool:
+    mut dirpath = base
+    if sub != "":
+        dirpath = base + "/" + sub
+    mut entries = Dir.init(dirpath).list()
+    mut i = 0
+    while i < entries.len:
+        mut name = entries.get(i)
+        mut rel = name
+        if sub != "":
+            rel = sub + "/" + name
+        mut full = base + "/" + rel
+        if Dir.init(full).exists():
+            if not scan_assets_into(base, rel, out, seen):
+                return false
+        elif is_image_ext(name):
+            mut ident = sanitize_ident(rel)
+            if ident in seen:
+                fail("two assets collide after sanitizing to the same name (" + ident + "): " + seen[ident] + " and " + rel)
+                return false
+            seen[ident] = rel
+            mut e = ImageEntry()
+            e.name = ident
+            e.rel = rel
+            out.append(e)
+        i = i + 1
+    return true
+
+# nebula1.0 Phase 4: bakes every image file found under `cfg.assets` (a
+# plain directory, no per-image registration -- see ImageEntry's own
+# comment in cli/config.tr) into `nebula_assets/image_<name>.tr` via
+# scripts/bake-image.ps1 -- BEFORE emit_entry() runs, since cli/codegen.tr's
+# generate() needs `cfg.images` (populated here, by the scan, not parsed
+# from nebula.conf) to emit the right imports/AppImagePainter class. A
+# no-op for the common case of an app with no `assets` line at all.
+
+# Emits the EXACT SAME baked-module shape scripts/bake-image.ps1's own
+# generator does (RGBA row-major, `<name>_w()`/`_h()`/`_pixels()`) --
+# `<image src-name>`'s own dispatch (cli/codegen.tr's image_painter_class)
+# never has to know or care whether a given baked module came from GDI+
+# or tausvg, only that the shape matches. A plain string-concat loop
+# over 65536 elements (128x128x4) is the wrong tool here -- StringBuilder
+# is what bake-image.ps1's own PowerShell generator uses for the same
+# reason (a StringBuilder, just .NET's instead of Tauraro's).
+def write_baked_module(res: RasterResult, name: str, outTr: str) -> void:
+    mut sb = StringBuilder.init(len(res.pixels) * 10 + 256)
+    sb.append("# GENERATED by tausvg (SVG asset bake) -- do not hand-edit.\n")
+    sb.append("#\n")
+    sb.append("# RGBA, 4 bytes/pixel, row-major: byte offset = (row * w + col) * 4.\n\n")
+    sb.append("pub def " + name + "_w() -> int:\n    return " + res.w.to_str() + "\n\n")
+    sb.append("pub def " + name + "_h() -> int:\n    return " + res.h.to_str() + "\n\n")
+    sb.append("pub def " + name + "_pixels() -> List[u8]:\n    return [")
+    mut n = len(res.pixels)
+    mut i = 0
+    while i < n:
+        if i > 0:
+            sb.append(", ")
+        sb.append_int(res.pixels[i] as int)
+        sb.append(" as u8")
+        i = i + 1
+    sb.append("]\n")
+    File.write_text(outTr, sb.to_string().as_str())
+
+def bake_images(cfg: Config) -> bool:
+    cfg.images = []
+    if cfg.assets == "":
+        return true
+    if not Dir.init(cfg.assets).exists():
+        fail("assets dir not found: " + cfg.assets)
+        return false
+    mut seen: Dict[str, str] = {}
+    if not scan_assets_into(cfg.assets, "", cfg.images, seen):
+        return false
+    if len(cfg.images) == 0:
+        return true
+    mut out = Dir.init("nebula_assets")
+    if not out.exists():
+        out.make()
+    mut i = 0
+    while i < len(cfg.images):
+        mut e = cfg.images[i]
+        mut outTr = "nebula_assets/image_" + e.name + ".tr"
+        mut srcPath = cfg.assets + "/" + e.rel
+        # 128x128 cap: a baked image is compiled-in SOURCE (see
+        # scripts/bake-image.ps1's own header on why), so an accidentally
+        # huge source photo must not turn into a multi-megabyte .tr file --
+        # plenty for the icon/logo-sized assets this is meant for.
+        if is_svg_ext(e.rel):
+            # In-process, no subprocess, no PowerShell/GDI+ -- see
+            # write_baked_module's own comment. Fill color: black (0) --
+            # matches an ordinary browser's own default SVG fill (no
+            # `fill` attribute at all resolves to black per the SVG
+            # spec), and every `<icon>`-family tag already tints via
+            # `text-<color>` on TOP of a rendered asset the same way, so
+            # a neutral baked default is the right call here too.
+            mut res = rasterize_svg_file(srcPath, 128, 0)
+            write_baked_module(res, e.name, outTr)
+            print("bake-image (svg) " + e.rel + " -> " + outTr + " (" + res.w.to_str() + "x" + res.h.to_str() + ")")
+        else:
+            # `-File` needs its own quotes: exe_dir() can contain spaces (a
+            # user profile path like "Yusee Habibu"), and an unquoted -File
+            # argument splits at the first space, same as -ImagePath below
+            # already accounts for.
+            mut cmd = "powershell -NoProfile -File \"" + exe_dir() + "/scripts/bake-image.ps1\" -ImagePath \"" + srcPath + "\" -Name " + e.name + " -OutTr " + outTr + " -MaxW 128 -MaxH 128"
+            if not run_cmd("bake-image (" + e.rel + ")", cmd):
+                return false
+        i = i + 1
+    return true
+
+# nebula1.0 Phase 4: bakes `font = ...` (see Config.font's own comment) into
+# `nebula_assets/font_data_custom.tr` via the EXISTING scripts/
+# bake-font.ps1 -- already fully generic (-FontPath/-OutTr/-Suffix), so
+# this is pure CLI orchestration, zero script changes. A no-op for the
+# common case of no `font` line.
+def bake_font(cfg: Config) -> bool:
+    if cfg.font == "":
+        return true
+    mut out = Dir.init("nebula_assets")
+    if not out.exists():
+        out.make()
+    # Explicit -PreviewPng: bake-font.ps1's own default ("tools\fonts\
+    # preview.png") is relative to CWD and would otherwise create a stray
+    # tools/fonts/ directory inside whatever app is building, not the
+    # toolkit's own (a leftover from that script's original single-caller
+    # design, now that a second caller exists).
+    mut cmd = "powershell -NoProfile -File \"" + exe_dir() + "/scripts/bake-font.ps1\" -FontPath \"" + cfg.font + "\" -OutTr nebula_assets/font_data_custom.tr -Suffix _custom -PreviewPng nebula_assets/font_custom_preview.png"
+    return run_cmd("bake-font", cmd)
 
 # Hosted and desktop compile straight to a native exe. Desktop additionally
 # needs SDL2 linked by path: `-lSDL2` fails with "searched paths: none",
@@ -252,82 +423,387 @@ def build_native(cfg: Config, target: int, entry: str) -> bool:
         cmd = cmd + " --link SDL2.lib"
     return run_cmd("tauraroc", cmd)
 
-# Freestanding wasm, then zig links it. Both flags below are load-bearing and
-# silent when missing: without --freestanding the C compile fails on stdio.h,
-# and without -rdynamic every export is stripped and the host page fails at
-# the first call with "not a function".
+# Freestanding wasm: one tauraroc invocation does it all now -- per-module
+# object caching + a direct wasm-ld link (tauraroc/src/main.tr's
+# compile_wasm_incremental), not a separate `zig build-exe` pass over every
+# generated .c file every time. That older pattern (still visible in git
+# history) reran zig's own build driver from scratch on every build and was
+# measured at 8.8GB peak RSS linking a ~30-file toolkit -- the actual cause
+# of "wasm builds take an hour and time out", not anything about wasm
+# itself. See tauraro's own commit history for the full story.
 def build_web(cfg: Config, entry: str) -> bool:
     clean_build_dir()
-    if not run_cmd("tauraroc", tool("tauraroc.exe") + " " + entry + " --target wasm --freestanding --emit c"):
-        return false
-
-    mut files = collect_c("build", "")
-    if files == "":
-        fail("tauraroc emitted no C sources")
-        return false
-
-    mut cmd = tool("zig/zig.exe") + " build-exe -target wasm32-freestanding -fno-entry -rdynamic"
-    cmd = cmd + " -O ReleaseSmall --export=__heap_base --initial-memory=67108864"
-    cmd = cmd + " --name nebula -femit-bin=.nebula/nebula.wasm"
-    cmd = cmd + " -cflags -w -fno-sanitize=undefined --" + files
-    return run_cmd("zig", cmd)
+    mut wasm = ".nebula/nebula.wasm"
+    # 512MB, not 64: every frame's LayoutBox tree + Scene is currently never
+    # reclaimed (see cli/codegen.tr's gen_web, the comment on why a
+    # per-frame arena release was tried and reverted -- it corrupted
+    # Interpreter.state instead). Until that gets a real two-region
+    # allocator fix, a bigger ceiling is the whole mitigation: 64MB filled
+    # (and hung the tab) in under a minute on a dashboard-sized page; 512MB
+    # buys roughly 8x the session length before the same thing happens.
+    # Costs nothing up front (wasm memory is lazily committed), so there is
+    # no reason to size this any tighter.
+    mut cmd = tool("tauraroc.exe") + " " + entry + " --target wasm --freestanding -Os --wasm-memory 512 -o " + wasm
+    return run_cmd("tauraroc", cmd)
 
 # The host page. Written out beside the .wasm so `nebula run --web` produces
 # something a browser can open with no other files and no bundler.
 #
-# The ABI is the whole reason this is generated rather than hand-written: get
-# one BigInt/Number boundary wrong and the failure is silent or nonsensical.
-# Tauraro `int` and `usize` are BOTH i64 in the wasm ABI -- so they arrive in
-# JS as BigInt, even on wasm32 -- while `Pointer[T]` is i32, a plain Number.
+# Renders through toolkit.render.web.canvas2d_renderer's real Canvas2D calls
+# (js_set_canvas_size/js_fill_rect/js_rounded_rect/js_circle/js_fill_text),
+# not a raw-pixel ImageData blit -- see cli/codegen.tr's gen_web for why.
+# HiDPI-correct: the canvas buffer is sized to CSS-size*devicePixelRatio and
+# the 2D context is scaled to match, or the whole page renders visibly soft
+# on any display with devicePixelRatio > 1 (basically every laptop screen),
+# not just at the edges -- confirmed the hard way building examples/web_ide.
 def host_page(cfg: Config) -> str:
     mut w = cfg.width.to_str()
     mut h = cfg.height.to_str()
     mut s = "<!doctype html>\n<meta charset=\"utf-8\">\n"
     s = s + "<title>" + cfg.name + "</title>\n"
     s = s + "<style>\n"
-    s = s + "  body { margin:0; min-height:100vh; display:grid; place-items:center;\n"
-    s = s + "         background:#020617; color:#94a3b8;\n"
-    s = s + "         font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }\n"
-    s = s + "  canvas { border-radius:12px; box-shadow:0 24px 60px #0008; cursor:none; }\n"
-    s = s + "  #hud { margin-top:12px; opacity:.75 }\n"
+    # nebula1.0 Phase 4: a REAL @font-face for JetBrainsMono.ttf (copied
+    # alongside this file by do_build() -- see that call site's own
+    # comment), not the `ui-monospace,SFMono-Regular,Menlo,monospace`
+    # fallback CHAIN this used to be. That chain resolves to a DIFFERENT
+    # actual font per browser/OS (`ui-monospace` isn't reliably supported
+    # outside Chromium/Safari; Firefox on Windows falls all the way
+    # through to plain `monospace`, typically Courier New) -- and every
+    # width/cursor-position calculation in toolkit.layout.flex
+    # (glyph_w()/glyph_h()) is baked from THIS EXACT font's own metrics
+    # (scripts/bake-font.ps1), so a substituted font with different
+    # character widths drifts the rendered text out of sync with where
+    # the toolkit thinks each character (and the caret) is -- confirmed
+    # the hard way: a user's real caret sat visibly off from the last
+    # typed character on Firefox, working fine on Chromium the whole time
+    # this was being verified only there.
+    s = s + "  @font-face { font-family: 'NebulaMono'; src: url('JetBrainsMono.ttf'); font-display: block; }\n"
+    s = s + "  html, body { margin:0; background:" + cfg.bg + ";\n"
+    s = s + "               font:13px NebulaMono, monospace; color:#94a3b8; }\n"
+    if cfg.fixed_size:
+        s = s + "  html, body { height:100%; }\n"
+        s = s + "  body { display:grid; place-items:center; gap:12px; }\n"
+        s = s + "  canvas { border-radius:12px; box-shadow:0 24px 60px #0008; }\n"
+    else:
+        # nebula1.0 Phase 3: fills the browser window by default (the OLD
+        # centered-fixed-canvas layout is opt-in now, via `fixed_size =
+        # true` in nebula.conf -- see Config.fixed_size's own comment).
+        # overflow-x:hidden stops a 1px horizontal scroll-bounce (the
+        # canvas is always exactly window-width) -- the same reasoning
+        # examples/web_ide's own index.html documents. overflow-y is
+        # deliberately NOT hidden (nebula1.0 Phase 4): the canvas/page
+        # grows taller than the viewport whenever content does (see
+        # applyCanvasSize's own call site below), and the browser's own
+        # native vertical scrollbar is what makes that reachable -- a
+        # real, already-draggable scrollbar, not a custom one this
+        # toolkit would otherwise need to build and maintain.
+        #
+        # `min-height:100%`, NOT `height:100%` -- confirmed the hard way:
+        # a percentage `height` is a FIXED size, and a taller child
+        # (the canvas, once it grows -- see applyCanvasSize's own call
+        # site) overflowing it does NOT expand `document.documentElement.
+        # scrollHeight`, so the page never actually became scrollable even
+        # though the canvas itself had visibly grown. `min-height` fixes
+        # that: at least the viewport, taller if content needs it.
+        s = s + "  html, body { width:100%; min-height:100%; overflow-x:hidden; }\n"
+        s = s + "  canvas { display:block; }\n"
+    s = s + "  #hud { opacity:.75; position:fixed; bottom:6px; left:10px; pointer-events:none; }\n"
     s = s + "</style>\n"
-    s = s + "<canvas id=\"c\" width=\"" + w + "\" height=\"" + h + "\"></canvas>\n"
+    s = s + "<canvas id=\"c\" tabindex=\"0\"></canvas>\n"
     s = s + "<div id=\"hud\">loading...</div>\n"
     s = s + "<script type=\"module\">\n"
-    s = s + "const W = " + w + ", H = " + h + ";\n"
+    if cfg.fixed_size:
+        s = s + "let W = " + w + ", H = " + h + ";\n"
+    else:
+        s = s + "let W = window.innerWidth, H = window.innerHeight;\n"
     s = s + "const cv = document.getElementById('c'), ctx = cv.getContext('2d');\n"
-    s = s + "const hud = document.getElementById('hud');\n\n"
-    # Empty import object: the module is freestanding, so it imports nothing.
-    s = s + "const { instance } = await WebAssembly.instantiateStreaming(fetch('nebula.wasm'), {});\n"
-    s = s + "const ex = instance.exports;\n\n"
-    s = s + "// __heap_base is where static data ends; everything above it is ours.\n"
-    s = s + "const heapBase = ex.__heap_base.value ?? ex.__heap_base;\n"
-    s = s + "const total = ex.memory.buffer.byteLength;\n"
-    s = s + "ex.nebula_heap_init(heapBase, BigInt(total - heapBase));\n\n"
-    s = s + "// Pointer[T] is i32 (a Number); int and usize are i64 (BigInt).\n"
-    s = s + "const pixelPtr = Number(ex.nebula_init(BigInt(W), BigInt(H)));\n\n"
-    s = s + "let image = null;\n"
-    s = s + "function refreshView() {\n"
-    s = s + "  const view = new Uint8ClampedArray(ex.memory.buffer, pixelPtr, W * H * 4);\n"
-    s = s + "  image = new ImageData(view, W, H);\n"
+    s = s + "const hud = document.getElementById('hud');\n"
+    s = s + "let mem = null;\n\n"
+    s = s + "function unpack(c) { return [(c>>16)&255, (c>>8)&255, c&255]; }\n\n"
+    # HiDPI fix -- see this function's own header comment. Sizing is
+    # factored into its own function (not run once at the top): a
+    # non-fixed-size page needs to redo this on window resize too, guarded
+    # against redundant reallocation -- js_set_canvas_size fires EVERY
+    # frame (Canvas2DCanvas.init runs inside nebula_frame), and reassigning
+    # cv.width/height unconditionally reallocates the entire backing store
+    # every single time; once the canvas fills the whole window that is a
+    # full-screen GPU buffer realloc 60 times a second, which is exactly
+    # what hung a tab building examples/web_ide earlier this session.
+    s = s + "let lastW = -1, lastH = -1, lastDpr = 0;\n"
+    s = s + "function applyCanvasSize(w, h) {\n"
+    s = s + "  const dpr = window.devicePixelRatio || 1;\n"
+    s = s + "  if (w === lastW && h === lastH && dpr === lastDpr) return;\n"
+    s = s + "  lastW = w; lastH = h; lastDpr = dpr;\n"
+    s = s + "  cv.width = Math.round(w * dpr);\n"
+    s = s + "  cv.height = Math.round(h * dpr);\n"
+    s = s + "  cv.style.width = w + 'px';\n"
+    s = s + "  cv.style.height = h + 'px';\n"
+    s = s + "  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);\n"
     s = s + "}\n"
-    s = s + "refreshView();\n\n"
-    s = s + "let mx = 0, my = 0, buttons = 0, key = 0;\n"
+    s = s + "applyCanvasSize(W, H);\n"
+    if not cfg.fixed_size:
+        # nebula1.0 Phase 4 (page scroll): `contentH` is the tallest real
+        # content height nebula_content_height() has reported so far this
+        # session (see frame()'s own comment below for where it's read and
+        # why a plain "grow, never shrink on resize" `Math.max` is enough)
+        # -- a window resize recomputes against it too, so making the
+        # window SHORTER never clips content the page is already tall
+        # enough to hold, and making it TALLER never leaves a gap below a
+        # shorter page.
+        s = s + "let contentH = 0;\n"
+        s = s + "window.addEventListener('resize', () => {\n"
+        s = s + "  W = window.innerWidth; H = Math.max(window.innerHeight, contentH);\n"
+        s = s + "  applyCanvasSize(W, H);\n"
+        s = s + "});\n"
+    s = s + "\n"
+    s = s + "const importObj = { env: {\n"
+    s = s + "  js_set_canvas_size(w, h) { applyCanvasSize(w, h); },\n"
+    s = s + "  js_fill_rect(x, y, w, h, color, alpha) {\n"
+    s = s + "    const [r,g,b] = unpack(color);\n"
+    s = s + "    ctx.fillStyle = alpha >= 255 ? `rgb(${r},${g},${b})` : `rgba(${r},${g},${b},${alpha/255})`;\n"
+    s = s + "    ctx.fillRect(x, y, w, h);\n"
+    s = s + "  },\n"
+    s = s + "  js_rounded_rect(x, y, w, h, radius, color) {\n"
+    s = s + "    const [r,g,b] = unpack(color);\n"
+    s = s + "    ctx.fillStyle = `rgb(${r},${g},${b})`;\n"
+    s = s + "    ctx.beginPath(); ctx.roundRect(x, y, w, h, Math.max(0, radius)); ctx.fill();\n"
+    s = s + "  },\n"
+    s = s + "  js_circle(cx, cy, r, color) {\n"
+    s = s + "    const [rr,gg,bb] = unpack(color);\n"
+    s = s + "    ctx.fillStyle = `rgb(${rr},${gg},${bb})`;\n"
+    s = s + "    ctx.beginPath(); ctx.arc(cx, cy, Math.max(0, r), 0, Math.PI*2); ctx.fill();\n"
+    s = s + "  },\n"
+    s = s + "  js_fill_text(ptr, len, x, y, sizePx, color) {\n"
+    s = s + "    const [r,g,b] = unpack(color);\n"
+    s = s + "    const bytes = new Uint8Array(mem.buffer, ptr, len);\n"
+    s = s + "    const text = new TextDecoder().decode(bytes);\n"
+    s = s + "    ctx.fillStyle = `rgb(${r},${g},${b})`;\n"
+    s = s + "    ctx.font = `${sizePx}px NebulaMono, monospace`;\n"
+    s = s + "    ctx.textBaseline = 'top';\n"
+    s = s + "    ctx.fillText(text, x, y);\n"
+    s = s + "  },\n"
+    # nebula1.0 Phase 3: real ctx.createLinearGradient + ctx.arc, matching
+    # toolkit/render/web/canvas2d_renderer.tr's js_gradient_rect/js_arc_ring
+    # extern signatures. dir: 0=horizontal, 1=vertical, 2=diagonal --
+    # angle convention for arc_ring: 0 degrees is straight up (12 o'clock),
+    # increasing clockwise (matches toolkit.ui.trig's sin1000/cos1000,
+    # which the CPU-rasterizer path this mirrors uses the same way) --
+    # canvas's own 0-radians is 3-o'clock with clockwise-positive angles in
+    # its y-down coordinate space, hence the `- 90` degree shift below.
+    s = s + "  js_gradient_rect(x, y, w, h, radius, colorA, colorB, dir) {\n"
+    s = s + "    const [ar,ag,ab] = unpack(colorA);\n"
+    s = s + "    const [br,bg,bb] = unpack(colorB);\n"
+    s = s + "    let grad;\n"
+    s = s + "    if (dir === 1) grad = ctx.createLinearGradient(x, y, x, y + h);\n"
+    s = s + "    else if (dir === 2) grad = ctx.createLinearGradient(x, y, x + w, y + h);\n"
+    s = s + "    else grad = ctx.createLinearGradient(x, y, x + w, y);\n"
+    s = s + "    grad.addColorStop(0, `rgb(${ar},${ag},${ab})`);\n"
+    s = s + "    grad.addColorStop(1, `rgb(${br},${bg},${bb})`);\n"
+    s = s + "    ctx.fillStyle = grad;\n"
+    s = s + "    ctx.beginPath(); ctx.roundRect(x, y, w, h, Math.max(0, radius)); ctx.fill();\n"
+    s = s + "  },\n"
+    s = s + "  js_arc_ring(cx, cy, r, ringW, startDeg, sweepDeg, active, track) {\n"
+    s = s + "    const [tr,tg,tb] = unpack(track);\n"
+    s = s + "    const rad = Math.max(1, r - ringW / 2);\n"
+    s = s + "    ctx.lineWidth = Math.max(1, ringW);\n"
+    s = s + "    ctx.lineCap = 'butt';\n"
+    s = s + "    ctx.strokeStyle = `rgb(${tr},${tg},${tb})`;\n"
+    s = s + "    ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.stroke();\n"
+    s = s + "    if (sweepDeg > 0) {\n"
+    s = s + "      const [ar,ag,ab] = unpack(active);\n"
+    s = s + "      const a0 = (startDeg - 90) * Math.PI / 180;\n"
+    s = s + "      const a1 = (startDeg + sweepDeg - 90) * Math.PI / 180;\n"
+    s = s + "      ctx.strokeStyle = `rgb(${ar},${ag},${ab})`;\n"
+    s = s + "      ctx.lineCap = 'round';\n"
+    s = s + "      ctx.beginPath(); ctx.arc(cx, cy, rad, a0, a1, false); ctx.stroke();\n"
+    s = s + "    }\n"
+    s = s + "  },\n"
+    # nebula1.0 Phase 4: `ImageData`/`putImageData` is the natural fit for
+    # RGBA pixel data (its own native format, no conversion) -- but
+    # putImageData ignores the canvas's own transform (the dpr scale set up
+    # by applyCanvasSize), so it's drawn through a same-size OFFSCREEN
+    # canvas first and blitted via ctx.drawImage(...), which DOES respect
+    # the transform -- otherwise a baked image would land at the wrong
+    # physical pixel on any non-1x display. The offscreen canvas is sized
+    # to `srcW`/`srcH` (the BAKED buffer's own pixel size -- `ImageData`
+    # throws IndexSizeError if that doesn't exactly match `bytes.length`),
+    # while drawImage's OWN destination-size args (`x, y, w, h`) do the
+    # actual scale to whatever on-screen size a `w-N h-N` token asked for
+    # -- real browser-native scaling, not a manual resample, and correct
+    # even when the destination aspect ratio doesn't match the source's.
+    # nebula1.0 Phase 4 (icon tinting): `tint` -1 blits the baked RGB
+    # unchanged (a photo/hero image); any other packed 0xRRGGBB recolors
+    # via the standard Canvas2D "source-in" trick -- draw the baked
+    # pixels for their ALPHA only, then fill the whole offscreen canvas
+    # with the tint color, which `source-in` clips to exactly the shape
+    # those alpha pixels already cover. Same offscreen-canvas-then-
+    # drawImage two-step as the untinted path, for the same dpr-transform
+    # reason (see this comment's own header just above).
+    s = s + "  js_image_blit(x, y, w, h, srcW, srcH, ptr, len, tint) {\n"
+    s = s + "    const bytes = new Uint8ClampedArray(mem.buffer, ptr, len).slice();\n"
+    s = s + "    const imgData = new ImageData(bytes, srcW, srcH);\n"
+    s = s + "    const off = document.createElement('canvas');\n"
+    s = s + "    off.width = srcW; off.height = srcH;\n"
+    s = s + "    const octx = off.getContext('2d');\n"
+    s = s + "    octx.putImageData(imgData, 0, 0);\n"
+    s = s + "    if (tint >= 0) {\n"
+    s = s + "      const [tr, tg, tb] = unpack(tint);\n"
+    s = s + "      octx.globalCompositeOperation = 'source-in';\n"
+    s = s + "      octx.fillStyle = `rgb(${tr},${tg},${tb})`;\n"
+    s = s + "      octx.fillRect(0, 0, srcW, srcH);\n"
+    s = s + "    }\n"
+    s = s + "    ctx.drawImage(off, x, y, w, h);\n"
+    s = s + "  },\n"
+    # nebula1.0 Phase 4: real Canvas2D clipping -- see toolkit.render.
+    # renderer's own comment for why every OTHER shape/text call here
+    # NEEDED this (they call their own js_* extern directly, never through
+    # the `Canvas` object toolkit.render.clipped_canvas's own clip
+    # intersection lives on). save()/clip() nest correctly for nested
+    # clip_push calls; restore() unwinds exactly one level, matching
+    # exec_cmds's own strict push/pop pairing (even nested).
+    s = s + "  js_clip_push(x, y, w, h) {\n"
+    s = s + "    ctx.save();\n"
+    s = s + "    ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();\n"
+    s = s + "  },\n"
+    s = s + "  js_clip_pop() {\n"
+    s = s + "    ctx.restore();\n"
+    s = s + "  },\n"
+    # nebula1.0 Phase 4 (`<link>`): toolkit.platform.browser's
+    # Canvas2DUrlOpener, the web target's UrlOpener -- `noopener` so the
+    # opened tab can't reach back into this page via `window.opener`.
+    s = s + "  js_open_url(ptr, len) {\n"
+    s = s + "    const bytes = new Uint8Array(mem.buffer, ptr, len);\n"
+    s = s + "    const url = new TextDecoder().decode(bytes);\n"
+    s = s + "    window.open(url, '_blank', 'noopener');\n"
+    s = s + "  },\n"
+    s = s + "}};\n\n"
+    # A `?v=` cache-buster on every load -- `nebula.wasm` and this HTML file
+    # get rewritten by every `nebula build --web`, but a browser has no way
+    # to know that (no version in the filename, and a local dev server like
+    # `python -m http.server` sends no cache-control headers strong enough
+    # to reliably force a refetch across page loads, especially in Firefox
+    # -- confirmed the hard way: a real fix landed here (page-scroll
+    # support) and one browser kept rendering the pre-fix build off a
+    # stale cache while another browser's fresh fetch showed it working).
+    # `Date.now()` is unique per load, so this always bypasses the cache --
+    # exactly the tradeoff a LOCAL DEV loop wants (never stale), not a
+    # production CDN's (this is not that).
+    s = s + "const { instance } = await WebAssembly.instantiateStreaming(fetch('nebula.wasm?v=' + Date.now()), importObj);\n"
+    s = s + "const ex = instance.exports;\n"
+    s = s + "mem = ex.memory;\n\n"
+    # Explicitly loaded and awaited (not just declared via @font-face and
+    # hoped for) -- a canvas fillText() with an unloaded font silently
+    # falls back to whatever's next in the font stack for THAT ONE call,
+    # no error, no visible loading state, so the very FIRST frame (this
+    # warm-up render_to() inside nebula_init, which paints text already)
+    # would otherwise measure/draw with the wrong metrics regardless of
+    # how fast the real font arrives after that.
+    s = s + "const nebulaFont = new FontFace('NebulaMono', \"url('JetBrainsMono.ttf')\");\n"
+    s = s + "await nebulaFont.load();\n"
+    s = s + "document.fonts.add(nebulaFont);\n\n"
+    s = s + "const heapBase = Number(ex.__heap_base.value ?? ex.__heap_base);\n"
+    s = s + "const total = ex.memory.buffer.byteLength;\n"
+    s = s + "ex.nebula_heap_init(heapBase, BigInt(total - heapBase));\n"
+    s = s + "ex.nebula_init(BigInt(W), BigInt(H));\n\n"
+    s = s + "let mx = 0, my = 0, buttons = 0, key = 0, wheel = 0;\n"
     s = s + "cv.addEventListener('mousemove', e => {\n"
     s = s + "  const r = cv.getBoundingClientRect();\n"
-    s = s + "  mx = Math.round((e.clientX - r.left) * W / r.width);\n"
-    s = s + "  my = Math.round((e.clientY - r.top) * H / r.height);\n"
+    s = s + "  mx = Math.round((e.clientX - r.left) * (W / r.width));\n"
+    s = s + "  my = Math.round((e.clientY - r.top) * (H / r.height));\n"
     s = s + "});\n"
-    s = s + "cv.addEventListener('mousedown', () => { buttons = 1; });\n"
+    s = s + "cv.addEventListener('mousedown', () => { buttons = 1; cv.focus(); });\n"
     s = s + "window.addEventListener('mouseup', () => { buttons = 0; });\n"
-    s = s + "window.addEventListener('keydown', e => { key = e.keyCode || 0; });\n\n"
+    s = s + "cv.addEventListener('contextmenu', e => e.preventDefault());\n"
+    # nebula1.0 Phase 4: no longer preventDefault()s -- nothing in the
+    # toolkit itself currently consumes `wheel` (it only ever reaches a
+    # page's own hand-written on_frame(), see this generator's own header),
+    # and blocking the event unconditionally was blocking the BROWSER's own
+    # native page-scroll over the canvas too, the entire mechanism
+    # nebula1.0 Phase 4's taller-than-viewport pages depend on. `passive:
+    # true` (was false, which existed only to make preventDefault legal)
+    # lets the browser scroll immediately without waiting on this handler.
+    s = s + "cv.addEventListener('wheel', e => { wheel = e.deltaY < 0 ? 1 : -1; }, { passive: true });\n\n"
+    # Key-code contract: 8=Backspace 9=Tab 13=Enter 1001..1009=Left/Right/Up/
+    # Down/Home/End/PageUp/PageDown/Delete, 1010/1011=Ctrl+Backspace/Ctrl+
+    # Delete (delete WORD before/after the cursor), 1012=Ctrl+A (select
+    # all), 1013/1014=Ctrl+Left/Ctrl+Right (jump WORD left/right), 32..126=
+    # printable ASCII. A page's own on_frame handler reads these the same
+    # way examples/web_ide's does.
+    s = s + "const KEY_MAP = { Backspace:8, Tab:9, Enter:13, ArrowLeft:1001, ArrowRight:1002,\n"
+    s = s + "  ArrowUp:1003, ArrowDown:1004, Home:1005, End:1006, PageUp:1007, PageDown:1008, Delete:1009 };\n"
+    s = s + "const NAV_KEYS = new Set(Object.keys(KEY_MAP));\n"
+    # nebula1.0 Phase 4: PageUp/PageDown are deliberately EXEMPT from the
+    # preventDefault() every other NAV_KEYS entry gets below -- no widget
+    # in this toolkit gives them any meaning (edit_text_state never reads
+    # codes 1007/1008), so blocking their default action only ever
+    # blocked the BROWSER's own native page-scroll, with nothing gained
+    # in exchange. `key` still gets set for any on_frame that wants to
+    # read them; only the default-action block is skipped.
+    s = s + "const SCROLL_KEYS = new Set(['PageUp', 'PageDown']);\n"
+    s = s + "cv.addEventListener('keydown', e => {\n"
+    # Every Ctrl-combo this toolkit gives a textinput real meaning to is
+    # checked BEFORE the "ignore any modifier" bail-out just below --
+    # word-delete (Backspace/Delete), select-all (A), word-jump
+    # (Left/Right). Every OTHER ctrl/meta/alt combo (copy/paste, browser
+    # shortcuts, ...) still passes through untouched, same as before.
+    s = s + "  if (e.ctrlKey && e.key === 'Backspace') { key = 1010; e.preventDefault(); return; }\n"
+    s = s + "  if (e.ctrlKey && e.key === 'Delete') { key = 1011; e.preventDefault(); return; }\n"
+    s = s + "  if (e.ctrlKey && e.key.toLowerCase() === 'a') { key = 1012; e.preventDefault(); return; }\n"
+    s = s + "  if (e.ctrlKey && e.key === 'ArrowLeft') { key = 1013; e.preventDefault(); return; }\n"
+    s = s + "  if (e.ctrlKey && e.key === 'ArrowRight') { key = 1014; e.preventDefault(); return; }\n"
+    s = s + "  if (e.ctrlKey || e.metaKey || e.altKey) return;\n"
+    s = s + "  if (NAV_KEYS.has(e.key)) {\n"
+    s = s + "    key = KEY_MAP[e.key];\n"
+    s = s + "    if (!SCROLL_KEYS.has(e.key)) e.preventDefault();\n"
+    s = s + "  }\n"
+    s = s + "  else if (e.key.length === 1) { key = e.key.charCodeAt(0); }\n"
+    s = s + "});\n\n"
+    s = s + "let lastCursor = -1;\n"
     s = s + "function frame() {\n"
-    s = s + "  ex.nebula_frame(BigInt(W), BigInt(H), BigInt(mx), BigInt(my), BigInt(buttons), BigInt(key));\n"
-    s = s + "  key = 0;\n"
-    # A grown memory detaches the old ArrayBuffer, which silently makes the
-    # ImageData view unusable. Cheap to check, maddening to debug otherwise.
-    s = s + "  if (image.data.buffer !== ex.memory.buffer) refreshView();\n"
-    s = s + "  ctx.putImageData(image, 0, 0);\n"
+    s = s + "  ex.nebula_frame(BigInt(W), BigInt(H), BigInt(mx), BigInt(my), BigInt(buttons), BigInt(key), BigInt(wheel));\n"
+    s = s + "  key = 0; wheel = 0;\n"
+    if not cfg.fixed_size:
+        # nebula1.0 Phase 4 (page scroll): grows the canvas -- and so the
+        # page, since it's `display:block` in normal document flow, not
+        # absolutely positioned -- to fit content taller than the current
+        # viewport, one frame after toolkit.ui.interp's own layout first
+        # reports it (see content_height()'s own comment for why that lag
+        # is fine: imperceptible, and the SAME frame already computed
+        # correct layout regardless of what H the canvas happened to be).
+        # Only resizes on an actual CHANGE (both the `!==` check here and
+        # applyCanvasSize's own internal one), so a page that never grows
+        # past one screen pays nothing extra.
+        s = s + "  const newContentH = Number(ex.nebula_content_height());\n"
+        s = s + "  if (newContentH !== contentH) {\n"
+        s = s + "    contentH = newContentH;\n"
+        s = s + "    const newH = Math.max(window.innerHeight, contentH);\n"
+        s = s + "    if (newH !== H) {\n"
+        s = s + "      H = newH;\n"
+        s = s + "      applyCanvasSize(W, H);\n"
+        # nebula1.0 Phase 4 (page-scroll blink fix): applyCanvasSize just
+        # reassigned cv.width/height, which the Canvas2D spec defines as
+        # CLEARING the backing store immediately -- with nothing repainted
+        # until the NEXT requestAnimationFrame tick, that left one visibly
+        # blank frame every time content first grew past one screen (the
+        # very first collapse/dropdown a fresh page load opens, almost
+        # always -- once the page is already tall enough, later opens
+        # rarely change contentH again, which is why it looked like a
+        # one-time "reload blink" rather than a recurring glitch). Repaint
+        # immediately, same tick, at the new size, so the resize and its
+        # first frame at that size are visually atomic. `buttons` is
+        # reused as-is (not a fresh click -- `_prev_buttons` inside the
+        # wasm already advanced past the down-edge on the FIRST call
+        # above, so this can never double-fire a dispatch); key/wheel are
+        # already zeroed.
+        s = s + "      ex.nebula_frame(BigInt(W), BigInt(H), BigInt(mx), BigInt(my), BigInt(buttons), BigInt(0), BigInt(0));\n"
+        s = s + "    }\n"
+        s = s + "  }\n"
+    # A single <canvas> has no per-region native cursor -- the wasm side
+    # tells us what's under (mx,my) each frame (1 = I-beam over a
+    # `<textinput>`, 0 = default) and we set the CSS cursor to match. Only
+    # touches the DOM on an actual change, not every frame.
+    s = s + "  const ck = Number(ex.nebula_cursor_kind());\n"
+    s = s + "  if (ck !== lastCursor) { cv.style.cursor = ck === 1 ? 'text' : 'default'; lastCursor = ck; }\n"
     s = s + "  hud.textContent = ex.nebula_frames() + ' frames - arena ' + ex.nebula_arena_used() + ' bytes';\n"
     s = s + "  requestAnimationFrame(frame);\n"
     s = s + "}\n"
@@ -339,6 +815,10 @@ def host_page(cfg: Config) -> str:
 
 def do_build(cfg: Config, target: int) -> bool:
     say("building " + cfg.name + " for " + target_name(target) + "...")
+    if not bake_images(cfg):
+        return false
+    if not bake_font(cfg):
+        return false
     mut entry = emit_entry(cfg, target)
     if entry == "":
         return false
@@ -351,6 +831,15 @@ def do_build(cfg: Config, target: int) -> bool:
     if target == target_web():
         if not build_web(cfg, entry):
             return false
+        # nebula1.0 Phase 4: JetBrainsMono.ttf, loaded as a REAL web font --
+        # see host_page()'s own comment for why `ui-monospace,...` alone
+        # isn't enough (a font-family FALLBACK CHAIN resolves differently
+        # per browser, and toolkit.layout.flex's glyph_w()/glyph_h() assume
+        # ONE specific font's metrics everywhere else). Copied via
+        # PowerShell, same as SDL2.dll's own copy just below in
+        # do_run() -- a binary file, not something File.write_text (text-
+        # mode) can safely move.
+        Process.system("powershell -NoProfile -Command \"Copy-Item '" + exe_dir() + "/tools/fonts/JetBrainsMono.ttf' .nebula/ -Force -ErrorAction SilentlyContinue\"")
         File.write_text(".nebula/index.html", host_page(cfg))
         say("  wrote .nebula/index.html")
         return true

@@ -1,0 +1,9 @@
+# Handlers for app/widgets/widgets.nbl. See app/home/home.tr's own header
+# for the register_all(it, router) contract every page follows.
+
+from toolkit.ui.interp import Interpreter
+from toolkit.ui.router import Router
+from app.nav import register_nav_handlers
+
+pub def widgets_register_all(it: Interpreter, router: Router) -> void:
+    register_nav_handlers(it, router)

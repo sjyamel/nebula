@@ -1,0 +1,51 @@
+# app.nav — the SPA sidebar's own navigation, shared across every page.
+#
+# Each page's own `.nbl` repeats the same header+sidebar markup block
+# (see home.nbl's own comment on why: toolkit.ui.component's templating
+# substitutes PROPS inside one already-parsed tree, it doesn't splice a
+# shared layout across SEPARATE page files, and this toolkit has no
+# other "shared layout" primitive today) -- but the six sidebar
+# `on_nav_*` HANDLERS only need writing once, here, since
+# toolkit.ui.router.Router.navigate() is the entire mechanism: no page
+# reload, no re-fetch, nothing else in the wasm module even notices --
+# the SAME running Interpreter just renders a DIFFERENT `router.page({})`
+# tree starting next frame (router_setup() already registers all six
+# routes up front; navigate() only ever changes which one is "current").
+#
+# Sidebar icon -> page mapping:
+#   house           -> home      (the smart-home dashboard itself)
+#   user            -> widgets   (checkbox/switch/radio/slider/progress/
+#                                 dial/gauge/iconring showcase)
+#   gear            -> forms     (textinput/label/collapse/dropdown)
+#   lock            -> overlays  (modal/tooltip)
+#   display         -> media     (image/icon/hr/link)
+#   circle-question -> tabs      (tabitem/listitem/grid)
+
+from toolkit.types import Event, EventHandler
+from toolkit.ui.router import Router
+from toolkit.ui.interp import Interpreter
+
+pub class NavigateHandler implements EventHandler:
+    pub router: Router
+    pub to:     str
+
+extend NavigateHandler:
+    pub def init(router: Router, to: str) -> NavigateHandler:
+        mut h = NavigateHandler()
+        h.router = router
+        h.to = to
+        return h
+
+    pub def handle(self, e: Event) -> void:
+        self.router.navigate(self.to, {})
+
+# One call from every page's own register_all(it, router) wires all six
+# sidebar destinations identically -- see each page's own .tr for the
+# one-line call site.
+pub def register_nav_handlers(it: Interpreter, router: Router) -> void:
+    it.add_slot("on_nav_home", NavigateHandler.init(router, "home"))
+    it.add_slot("on_nav_widgets", NavigateHandler.init(router, "widgets"))
+    it.add_slot("on_nav_forms", NavigateHandler.init(router, "forms"))
+    it.add_slot("on_nav_overlays", NavigateHandler.init(router, "overlays"))
+    it.add_slot("on_nav_media", NavigateHandler.init(router, "media"))
+    it.add_slot("on_nav_tabs", NavigateHandler.init(router, "tabs"))

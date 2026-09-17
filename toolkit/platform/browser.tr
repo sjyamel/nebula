@@ -1,0 +1,61 @@
+# toolkit.platform.browser — nebula1.0 Phase 4 (`<link>`): opening a URL in
+# whatever the host has as a "browser". Just the interface and the safe
+# default here -- each TARGET's own concrete UrlOpener lives in its own
+# file (toolkit.render.web.canvas2d_renderer.Canvas2DUrlOpener, toolkit.
+# platform.native_browser.NativeUrlOpener), one implementer per file,
+# matching this toolkit's existing Canvas/Renderer convention (see
+# toolkit.render.software_renderer's own header) -- kept that way for
+# tidiness, not because it fixes anything (see the compiler-gap note just
+# below: the real trigger was the METHOD NAME, not file layout).
+#
+# Same interface-plus-default-free-function shape as toolkit.render.renderer/
+# software_renderer's own Renderer/default_renderer() (see that file's own
+# comment for the compiler gap this works around: assigning a concrete class
+# straight to an interface-typed field doesn't compile, only routing it
+# through a function whose OWN return type is the interface does). A target
+# that never calls register_url_opener() gets a safe no-op -- the same
+# has_image_painter-style guard toolkit.ui.interp's ImagePainter already
+# uses, so `<link>` degrades to "does nothing" rather than crashing on a
+# freestanding/bare-metal build with no browser to open in the first place.
+#
+# A real compiler gap, found wiring this up: the interface method was
+# originally named `open`, and having TWO OR MORE classes implement it
+# (NoOpUrlOpener here, Canvas2DUrlOpener in toolkit.render.web.
+# canvas2d_renderer, NativeUrlOpener in toolkit.platform.native_browser)
+# made tauraroc's C backend emit a vtable struct initializer referencing
+# `<Class>_open` for every implementer, but never actually emit the
+# forward declaration for ANY of them -- "undeclared identifier" at
+# compile time, not a link error, and the compiler's own fuzzy-match
+# suggestion ("did you mean '_open'?") points at some unrelated CRT
+# symbol, not a real fix. Reproduced in an 8-line minimal repro (two
+# trivial classes implementing a 1-method interface named `open`, one
+# registered into a holder, called through the interface field): fails
+# exactly this way, on the very first two implementers, regardless of
+# whether they share a file or not (tried splitting into separate files
+# first -- same two symbols still undeclared, ruling out file layout as
+# the trigger). Renaming the SAME interface method to `launch` (nothing
+# else changed) compiles and dispatches correctly. Root cause not found
+# (something about the specific identifier "open" is special-cased
+# somewhere in codegen, plausibly for the `ClassName.open()` static-
+# factory convention several backends already use, e.g. SdlCanvas.open()
+# -- but that's a STATIC method, not an interface INSTANCE method, so this
+# looks like a name check that doesn't distinguish the two). Worked around
+# by naming this method `launch` instead; not fixed in the compiler
+# itself -- worth reproducing standalone and reporting upstream.
+pub interface UrlOpener:
+    def launch(self, url: str) -> void
+
+pub class NoOpUrlOpener implements UrlOpener:
+    _unused: int
+
+extend NoOpUrlOpener:
+    pub def init() -> NoOpUrlOpener:
+        mut o = NoOpUrlOpener()
+        o._unused = 0
+        return o
+
+    pub def launch(self, url: str) -> void:
+        pass
+
+pub def default_url_opener() -> UrlOpener:
+    return NoOpUrlOpener.init()

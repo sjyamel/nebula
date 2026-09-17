@@ -1,0 +1,8 @@
+# Handlers for app/tabs/tabs.nbl.
+
+from toolkit.ui.interp import Interpreter
+from toolkit.ui.router import Router
+from app.nav import register_nav_handlers
+
+pub def tabs_register_all(it: Interpreter, router: Router) -> void:
+    register_nav_handlers(it, router)

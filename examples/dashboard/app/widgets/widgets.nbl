@@ -1,0 +1,85 @@
+# Widgets showcase -- part of the SPA sidebar nav (nebula1.0 Phase 4).
+# Every markup-tag widget that's a small, self-contained control lives
+# here: checkbox/switch/radio/slider/progress/dial/gauge/iconring. See
+# app/nav.tr for the routing convention every page here shares (the
+# header+sidebar block below is IDENTICAL across all six pages on
+# purpose -- toolkit.ui.component's templating can't splice a shared
+# layout across separate page files, so this is the honest way to keep
+# it consistent: copy the block, change which nav item is `selected`).
+
+<panel "flex-col w-full h-full bg-slate-50">
+
+  <panel "flex-row items-center justify-between px-8 py-4 bg-white gap-6">
+    <text "text-lg text-slate-800">Widgets</text>
+  </panel>
+
+  <panel "flex-row grow">
+
+    <panel "flex-col w-20 bg-violet-600 to-pink-500 bg-gradient-b items-center py-8 gap-6">
+      <listitem "group-nav value-0 key-widgetsnav0 w-11 h-11 rounded-xl items-center justify-center" @on_click(on_nav_home)>
+        <image "tint src-icons/house.svg text-white w-6 h-6"/>
+      </listitem>
+      <listitem "group-nav value-1 key-widgetsnav1 selected w-11 h-11 rounded-xl items-center justify-center" @on_click(on_nav_widgets)>
+        <image "tint src-icons/user.svg text-white w-6 h-6"/>
+      </listitem>
+      <listitem "group-nav value-2 key-widgetsnav2 w-11 h-11 rounded-xl items-center justify-center" @on_click(on_nav_forms)>
+        <image "tint src-icons/gear.svg text-white w-6 h-6"/>
+      </listitem>
+      <listitem "group-nav value-3 key-widgetsnav3 w-11 h-11 rounded-xl items-center justify-center" @on_click(on_nav_overlays)>
+        <image "tint src-icons/lock.svg text-white w-6 h-6"/>
+      </listitem>
+      <listitem "group-nav value-4 key-widgetsnav4 w-11 h-11 rounded-xl items-center justify-center" @on_click(on_nav_media)>
+        <image "tint src-icons/display.svg text-white w-6 h-6"/>
+      </listitem>
+      <listitem "group-nav value-5 key-widgetsnav5 w-11 h-11 rounded-xl items-center justify-center" @on_click(on_nav_tabs)>
+        <image "tint src-icons/circle-question.svg text-white w-6 h-6"/>
+      </listitem>
+    </panel>
+
+    <panel "flex-col grow p-8 gap-6">
+      <text "text-2xl text-slate-800">Widgets</text>
+      <panel "grid grid-cols-4 gap-6">
+        <panel "bg-white rounded-xl p-6 gap-3 flex-col items-center shadow w-40">
+          <text "text-slate-600">Checkbox</text>
+          <checkbox "checked"/>
+        </panel>
+        <panel "bg-white rounded-xl p-6 gap-3 flex-col items-center shadow w-40">
+          <text "text-slate-600">Switch</text>
+          <switch "on"/>
+        </panel>
+        <panel "bg-white rounded-xl p-6 gap-3 flex-col items-center shadow w-40">
+          <text "text-slate-600">Radio group</text>
+          <panel "flex-row gap-3">
+            <radio "group-demoradio value-0 selected w-4 h-4"/>
+            <radio "group-demoradio value-1 w-4 h-4"/>
+            <radio "group-demoradio value-2 w-4 h-4"/>
+          </panel>
+        </panel>
+        <panel "bg-white rounded-xl p-6 gap-3 flex-col items-center shadow w-40">
+          <text "text-slate-600">Slider</text>
+          <slider "min-0 max-100 value-40 w-28"/>
+        </panel>
+        <panel "bg-white rounded-xl p-6 gap-3 flex-col items-center shadow w-40">
+          <text "text-slate-600">Progress</text>
+          <progress "value-65 w-28"/>
+        </panel>
+        <panel "bg-white rounded-xl p-6 gap-3 flex-col items-center shadow w-40">
+          <text "text-slate-600">Dial</text>
+          <dial "min-0 max-100 value-55 w-20 h-20"/>
+        </panel>
+        <panel "bg-white rounded-xl p-6 gap-3 flex-col items-center shadow w-40">
+          <text "text-slate-600">Gauge</text>
+          <gauge "value-70 max-100 w-20 h-20 items-center justify-center">
+            <text "text-slate-700">70%</text>
+          </gauge>
+        </panel>
+        <panel "bg-white rounded-xl p-6 gap-3 flex-col items-center shadow w-40">
+          <text "text-slate-600">Icon ring</text>
+          <iconring "bg-sky-500 w-16 h-16 items-center justify-center">
+            <image "tint src-icons/bell.svg text-white w-6 h-6"/>
+          </iconring>
+        </panel>
+      </panel>
+    </panel>
+  </panel>
+</panel>
