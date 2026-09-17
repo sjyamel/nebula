@@ -1440,21 +1440,15 @@ def exec_cmds(scene: Scene, start: int, active: Canvas, fonts: Fonts, r: Rendere
             if cmd.alpha < 255 and cmd.radius <= 0:
                 active.fill_rect_alpha(cmd.x, cmd.y, cmd.w, cmd.h, cmd.fill, cmd.alpha)
             else:
-                paint_rounded_rect_aa(active, cmd.x, cmd.y, cmd.w, cmd.h, cmd.radius, cmd.fill, cmd.ambient)
+                r.rounded_rect(active, cmd.x, cmd.y, cmd.w, cmd.h, cmd.radius, cmd.fill, cmd.ambient)
             i = i + 1
         elif cmd.kind == cmd_rounded_box():
-            paint_rounded_box_aa(active, cmd.x, cmd.y, cmd.w, cmd.h, cmd.radius, cmd.border_w, cmd.fill, cmd.stroke, cmd.ambient)
+            r.rounded_box(active, cmd.x, cmd.y, cmd.w, cmd.h, cmd.radius, cmd.border_w, cmd.fill, cmd.stroke, cmd.ambient)
             i = i + 1
         elif cmd.kind == cmd_text():
-            draw_text(active, fonts.pick(cmd.font_size), cmd.text, cmd.x, cmd.y, cmd.fill, cmd.ambient)
+            r.text(active, fonts.pick(cmd.font_size), cmd.text, cmd.x, cmd.y, cmd.fill, cmd.ambient)
             i = i + 1
         elif cmd.kind == cmd_circle():
-            # Markup-tag widgets (phase 1): routed through Renderer, NOT the
-            # direct paint_X_aa functions rounded_rect/rounded_box still use
-            # above -- see toolkit/ui/interp.tr's own header note on this
-            # deliberate split (only the two NEW shape kinds this phase adds
-            # get Renderer-dispatch; existing panel/button rendering is an
-            # explicitly deferred follow-up, not touched here).
             r.circle(active, cmd.x, cmd.y, cmd.radius, cmd.fill, cmd.ambient)
             i = i + 1
         elif cmd.kind == cmd_circle_ring():

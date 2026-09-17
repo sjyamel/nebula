@@ -4,26 +4,30 @@
 # structure -- only the platform glue differs, and only in the ways every
 # other examples/*_web sibling already differs from its desktop twin.
 #
-# ## KNOWN ISSUE, not yet resolved: hangs at runtime inside nebula_init
+# ## RESOLVED (2026-09-12): the nebula_init hang was an allocating global
 #
-# The wasm module compiles and links cleanly (`-O Debug`, not the default
-# `-O ReleaseSmall`, is required to avoid this box's zig-linker memory-
-# pressure kills -- see scripts/build-web.ps1's own args for the flag this
-# overrides). But calling `nebula_init` never returns: confirmed via a
-# direct Node.js `WebAssembly.instantiate` probe (bypassing the browser
-# entirely, so this is not a browser-automation artifact) -- CPU climbs
-# steadily with memory usage FLAT, which rules out a runaway allocation
-# loop and points at something CPU-bound that never terminates. Not yet
-# isolated to a specific line: an isolation test (a bare
-# `_it = Interpreter.init()` global assignment, no markup at all) was
-# in progress when this session's build infra became too unreliable to
-# finish it (see MEMORY.md's own notes on this box's chronic build
-# flakiness). Prime suspect, not yet confirmed: the "persistent Interpreter
-# as a module-level global" pattern this file introduces (see below) --
-# genuinely novel, not used by any other *_web example, since every other
-# one keeps its widget state in scalar globals instead. Desktop
-# (examples/ide_demo) does not have this bug; the logic is identical there,
-# only the platform glue differs.
+# This file used to document a hang here as unresolved: `nebula_init` never
+# returned, CPU climbing with memory flat. The earlier prime suspect -- "the
+# persistent Interpreter as a module-level global" -- was half right. The
+# problem was not holding an Interpreter in a global; it was INITIALIZING
+# one in the declaration.
+#
+# `mut _it: Interpreter = Interpreter.init()` compiles into a constructor
+# that wasm-ld calls at the top of every export, before the host can call
+# nebula_heap_init. It allocates from an arena still bounded (0, 0), gets
+# null, and spins forever trying to grow a collection that cannot grow.
+#
+# Isolated by bisection, not inspection: a probe module with the same
+# globals hung on ALL SEVEN of its exports -- including nebula_heap_init,
+# whose entire body is two integer stores, and including exports that never
+# touch the global at all. That "everything hangs equally" pattern is what
+# identifies a constructor rather than any particular line of app code. The
+# same module with only the initializers removed returned correctly from
+# every export. See bugs.txt #1's "allocating-initializer variant".
+#
+# The fix is the bare declarations below. Build note that still applies:
+# `-O Debug`, not the default `-O ReleaseSmall`, avoids this box's
+# zig-linker memory-pressure kills (85 MB vs 8.8 GB resident).
 #
 # ## The one real architectural difference: a PERSISTENT Interpreter
 #
@@ -127,14 +131,31 @@ extend MenuHandler:
 mut _frames:   int  = 0
 mut _prev_btn: bool = false
 
-# The persistent Interpreters/trees this file's own header explains --
-# their declared initializers below never run on freestanding either (same
-# rule, same reason), so these start as raw zeroed/null values and are
-# given their real ones inside nebula_init's own body instead.
-mut _it:            Interpreter        = Interpreter.init()
+# The persistent Interpreters/trees this file's own header explains.
+#
+# DECLARED WITH NO INITIALIZER, and that is load-bearing -- it is the fix
+# for the hang this file's header used to document as unresolved.
+#
+# An ALLOCATING initializer here (`= Interpreter.init()`, or even `= []`)
+# does not merely "fail to run" the way a scalar's does. It is compiled into
+# a constructor that wasm-ld calls at the top of EVERY export, before the
+# host has had any chance to call nebula_heap_init -- so it allocates from an
+# arena whose bounds are still (0, 0), gets null back, and spins forever
+# trying to grow a collection that can never grow. That is the "CPU climbs,
+# memory flat" signature: a loop that makes no progress and allocates
+# nothing.
+#
+# The tell is that it hangs EVERY export equally, including nebula_heap_init
+# itself, whose whole body is two integer stores. Isolated by probe (see
+# bugs.txt #1, "the allocating-initializer variant"): identical module with
+# only these initializers removed, all exports return correctly.
+#
+# So: declare bare, assign inside nebula_init's body, which the host calls
+# exactly once and which by then has a real arena.
+mut _it:            Interpreter
 mut _tree:          Pointer[UiNode]    = 0 as Pointer[UiNode]
-mut _content_it:    Interpreter        = Interpreter.init()
-mut _content_trees: List[Pointer[UiNode]] = []
+mut _content_it:    Interpreter
+mut _content_trees: List[Pointer[UiNode]]
 
 def content_x() -> int:
     return 220
@@ -214,6 +235,28 @@ pub export def nebula_frame(width: int, height: int, mouse_x: int, mouse_y: int,
 
     mut canvas = Canvas2DCanvas.init(width, height)
     canvas.clear(0x0B1120)
+
+    # Route the MARKUP through the Canvas2D renderer, not just the widgets.
+    #
+    # Interpreter.renderer defaults to default_renderer() -- the software
+    # rasterizer -- and execute_software() hands every scene command to
+    # whatever is in that field. Leaving it at the default is why this demo
+    # used to reference only js_fill_rect: every rounded corner and every
+    # glyph was reaching the browser as a stream of 1x1 fillRects from
+    # set_pixel, instead of as one ctx.roundRect / ctx.fillText call.
+    #
+    # examples/web_shell only ever got the native calls because it assigns
+    # `.renderer` on its HOST-PAINTED widgets; it has no equivalent for its
+    # markup either. This app is built entirely from markup tags, so without
+    # these two lines nothing native is used at all.
+    #
+    # Assigned here rather than in nebula_init because the renderer wraps the
+    # canvas, and the canvas is per-frame. Canvas2DCanvas.init() only stores
+    # width/height (there is no pixel buffer on this backend), so rebuilding
+    # it per frame costs nothing.
+    mut gr = canvas2d_renderer_of(canvas)
+    _it.renderer = gr
+    _content_it.renderer = gr
 
     if clicked:
         _it.dispatch(Event.click(mouse_x, mouse_y))
