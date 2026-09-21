@@ -1,0 +1,139 @@
+# verified-examples/hooks.tr — toolkit.ui.hooks, asserted.
+#
+# Checks the semantics that are easy to get wrong and invisible when they
+# are: that use_effect fires on the FIRST call (React's run-on-mount) and
+# then only on change, that use_prev reports the previous value rather than
+# the current one, that use_ref does not collide with use_state under the
+# same key, and that hooks and markup-tag widgets genuinely share one store.
+#
+#   tauraroc --run verified-examples/hooks.tr
+
+from toolkit.ui.interp import Interpreter
+from toolkit.ui.hooks import use_state, set_state, use_text, set_text
+from toolkit.ui.hooks import use_bool, set_bool, use_toggle
+from toolkit.ui.hooks import use_ref, set_ref, use_effect, use_prev
+from toolkit.ui.hooks import use_memo, set_memo, use_memo_stale
+from toolkit.ui.hooks import Reducer, use_reducer, dispatch, use_spring
+
+mut _pass: int = 0
+mut _fail: int = 0
+
+def check(label: str, got: int, want: int) -> void:
+    if got == want:
+        _pass = _pass + 1
+    else:
+        _fail = _fail + 1
+        print("  FAIL " + label + ": got " + got.to_str() + " want " + want.to_str())
+
+def check_b(label: str, got: bool, want: bool) -> void:
+    mut g = 0
+    if got:
+        g = 1
+    mut w = 0
+    if want:
+        w = 1
+    check(label, g, w)
+
+def check_s(label: str, got: str, want: str) -> void:
+    if got == want:
+        _pass = _pass + 1
+    else:
+        _fail = _fail + 1
+        print("  FAIL " + label + ": got '" + got + "' want '" + want + "'")
+
+# A counter reducer: action 1 increments, -1 decrements, 0 resets.
+pub class Counter implements Reducer:
+    pub tag: int
+
+extend Counter:
+    pub def init() -> Counter:
+        mut c = Counter()
+        c.tag = 0
+        return c
+
+    pub def reduce(self, state: int, action: int) -> int:
+        if action == 0:
+            return 0
+        return state + action
+
+def main():
+    mut it = Interpreter.init()
+
+    print("=== use_state ===")
+    check("initial default", use_state(it, "K:n", 5), 5)
+    set_state(it, "K:n", 12)
+    check("after set", use_state(it, "K:n", 5), 12)
+    check("default ignored once set", use_state(it, "K:n", 99), 12)
+
+    print("=== use_text ===")
+    check_s("initial default", use_text(it, "K:name", "anon"), "anon")
+    set_text(it, "K:name", "ada")
+    check_s("after set", use_text(it, "K:name", "anon"), "ada")
+
+    print("=== use_bool / use_toggle ===")
+    check_b("initial true", use_bool(it, "K:on", true), true)
+    set_bool(it, "K:on", false)
+    check_b("after set false", use_bool(it, "K:on", true), false)
+    check_b("toggle returns new", use_toggle(it, "K:on", false), true)
+    check_b("toggle persisted", use_bool(it, "K:on", false), true)
+
+    print("=== use_ref does not collide with use_state ===")
+    set_state(it, "K:x", 1)
+    set_ref(it, "K:x", 2)
+    check("state side", use_state(it, "K:x", 0), 1)
+    check("ref side", use_ref(it, "K:x", 0), 2)
+
+    print("=== use_effect: fires on first call, then only on change ===")
+    check_b("first call (mount)", use_effect(it, "K:tab", 0), true)
+    check_b("same dep", use_effect(it, "K:tab", 0), false)
+    check_b("dep changed", use_effect(it, "K:tab", 3), true)
+    check_b("same again", use_effect(it, "K:tab", 3), false)
+    check_b("changed back", use_effect(it, "K:tab", 0), true)
+    # A dep of 0 on first call must still fire -- the bug this guards is
+    # treating "no stored value" and "stored 0" as the same thing.
+    check_b("zero dep still mounts", use_effect(it, "K:fresh", 0), true)
+
+    print("=== use_prev ===")
+    check("first call returns current", use_prev(it, "K:p", 7), 7)
+    check("second sees first", use_prev(it, "K:p", 9), 7)
+    check("third sees second", use_prev(it, "K:p", 4), 9)
+
+    print("=== use_memo ===")
+    check_b("stale on first", use_memo_stale(it, "K:sum", 2), true)
+    set_memo(it, "K:sum", 100)
+    check("reads cached", use_memo(it, "K:sum", 0), 100)
+    check_b("not stale, same dep", use_memo_stale(it, "K:sum", 2), false)
+    check_b("stale, dep moved", use_memo_stale(it, "K:sum", 3), true)
+    check("cache survives staleness", use_memo(it, "K:sum", 0), 100)
+
+    print("=== use_reducer ===")
+    mut r = Counter.init()
+    check("initial", use_reducer(it, "K:c", 10), 10)
+    check("increment", dispatch(it, "K:c", r, 1), 11)
+    check("increment again", dispatch(it, "K:c", r, 1), 12)
+    check("decrement", dispatch(it, "K:c", r, 0 - 1), 11)
+    check("reset", dispatch(it, "K:c", r, 0), 0)
+    check("persisted", use_reducer(it, "K:c", 999), 0)
+
+    print("=== use_spring ===")
+    # Starts AT target on first call (never animates in from a bogus 0),
+    # then steps toward a new target.
+    check("starts at target", use_spring(it, "K:s", 50, 10), 50)
+    check("steps toward", use_spring(it, "K:s", 100, 10), 60)
+    check("steps again", use_spring(it, "K:s", 100, 10), 70)
+    check("clamps at target", use_spring(it, "K:s", 72, 10), 72)
+
+    print("=== hooks and markup tags share one store ===")
+    # A <checkbox "key-autosave"> stores its checked flag at node_key
+    # "K:autosave" (toolkit/ui/interp.tr's emit_widget). A hook under that
+    # same key must see it -- this is the property that lets a handler read
+    # what a tag owns without any bridging.
+    it.state_set("K:autosave", 1)
+    check_b("hook reads a tag's state", use_bool(it, "K:autosave", false), true)
+    set_bool(it, "K:autosave", false)
+    check("tag would read the hook's write", it.state_get("K:autosave", 9), 0)
+
+    print("")
+    print("passed=" + _pass.to_str() + " failed=" + _fail.to_str())
+    if _fail == 0:
+        print("ALL OK")

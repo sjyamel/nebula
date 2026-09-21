@@ -1,0 +1,200 @@
+# toolkit.ui.hooks — React-shaped state hooks over Interpreter.state.
+#
+# `Interpreter` already has the storage these need: a `state` Dict keyed by
+# `LayoutBox.node_key` (proposal v4 step F), plus `text_state` for strings
+# and `anim_toward` for eased values. What it did not have was the ERGONOMIC
+# shape people arrive expecting -- read-and-default in one call, a toggle, an
+# "did this change since last frame" test. That is all this module is.
+#
+# ## The one real difference from React, and why
+#
+# **These hooks are KEYED, not call-ordered.** React can write
+# `const [n, setN] = useState(0)` with no key because a component function is
+# invoked once per instance per render, in a stable order, so the Nth
+# useState call in that function always refers to the same slot.
+#
+# Nebula has no component function to count calls inside. Markup is data --
+# the LayoutBox tree is rebuilt from a class string every frame -- and
+# handlers are registered by name, not composed into a render function. So
+# there is no call order to key on, and the key has to be explicit.
+#
+# That is not a workaround; it is the same identity mechanism the markup-tag
+# widgets already use. A `<checkbox "key-autosave">` stores its checked state
+# at node_key `K:autosave`; `use_state(it, "K:autosave", 0)` reads exactly
+# that. Hooks and tags share one store, so a handler can read the state a tag
+# owns, and a tag can display the state a handler wrote, with no bridging.
+#
+# Pass a node's own `node_key` when you want per-node state, or any stable
+# string when you want app-global state. The `G:` prefix convention
+# (examples/dashboard uses `G:active-file`) marks the latter.
+#
+# ## What is deliberately NOT here
+#
+#   useContext   there is no component tree to provide through; app-global
+#                state under a `G:` key is the same thing with less
+#                machinery.
+#   useCallback  handlers are registered once by name, not recreated per
+#                render, so there is nothing to memoize.
+#   useLayoutEffect  there is no two-phase commit to sit between.
+#
+# Their absence is structural, not an omission to fill in later.
+
+from toolkit.ui.interp import Interpreter
+
+# --- useState --------------------------------------------------------------
+#
+# `use_state` reads the current value, or `initial` the first time. Pair it
+# with `set_state` to write. Split into two functions rather than returning a
+# setter, because Tauraro has no closures that survive the freestanding
+# tiers (see CLAUDE.md on first-class function values) -- and a plain
+# `set_state(it, key, v)` needs no capture at all.
+pub def use_state(it: Interpreter, key: str, initial: int) -> int:
+    return it.state_get(key, initial)
+
+pub def set_state(it: Interpreter, key: str, value: int) -> void:
+    it.state_set(key, value)
+
+# --- useState, for text ----------------------------------------------------
+#
+# A separate pair because `state` is int-only; `<textinput>`'s content lives
+# in `text_state` for the same reason.
+pub def use_text(it: Interpreter, key: str, initial: str) -> str:
+    return it.text_get(key, initial)
+
+pub def set_text(it: Interpreter, key: str, value: str) -> void:
+    it.text_set(key, value)
+
+# --- boolean state ---------------------------------------------------------
+#
+# `state` stores ints, and every caller of a boolean was writing the same
+# `!= 0` / `b2i` dance. These two do it once.
+pub def use_bool(it: Interpreter, key: str, initial: bool) -> bool:
+    mut d = 0
+    if initial:
+        d = 1
+    return it.state_get(key, d) != 0
+
+pub def set_bool(it: Interpreter, key: str, value: bool) -> void:
+    mut v = 0
+    if value:
+        v = 1
+    it.state_set(key, v)
+
+# Flips and returns the NEW value -- one call from an `@on_click` handler.
+pub def use_toggle(it: Interpreter, key: str, initial: bool) -> bool:
+    mut d = 0
+    if initial:
+        d = 1
+    return it.state_toggle(key, d) != 0
+
+# --- useRef ----------------------------------------------------------------
+#
+# Deliberately the same storage as use_state. The distinction React draws --
+# a ref does not trigger a re-render -- does not exist here, because nothing
+# triggers re-renders: the host loop redraws every frame regardless. These
+# exist so intent is readable at the call site ("this is bookkeeping, not
+# something the UI shows"), which is the half of useRef that does carry over.
+pub def use_ref(it: Interpreter, key: str, initial: int) -> int:
+    return it.state_get(key + "#ref", initial)
+
+pub def set_ref(it: Interpreter, key: str, value: int) -> void:
+    it.state_set(key + "#ref", value)
+
+# --- useEffect -------------------------------------------------------------
+#
+# Returns true when `dep` differs from what it was at the previous call with
+# this key -- and on the FIRST call, matching React's run-on-mount. The
+# caller does the effect itself:
+#
+#     if use_effect(it, "K:tab#load", active_tab):
+#         load_document(active_tab)
+#
+# Inverted relative to React (a predicate you branch on, rather than a
+# callback you hand over) for the same reason set_state is not a returned
+# setter: passing a function value is the thing that is unreliable on the
+# freestanding tiers, and a branch needs no function at all.
+#
+# No cleanup function, and no way to add one: cleanup only means something
+# when there is an unmount to hang it on, and a markup tree that is rebuilt
+# wholesale every frame has no unmount event to observe.
+pub def use_effect(it: Interpreter, key: str, dep: int) -> bool:
+    mut slot = key + "#dep"
+    mut seen = it.state_get(slot + "#seen", 0)
+    mut prev = it.state_get(slot, 0)
+    it.state_set(slot, dep)
+    it.state_set(slot + "#seen", 1)
+    if seen == 0:
+        return true
+    return prev != dep
+
+# The value `key` held at the previous call -- React's usePrevious, which is
+# not built in there either but is written by hand in every codebase.
+# Returns `current` on the first call, so a caller never sees a bogus zero.
+pub def use_prev(it: Interpreter, key: str, current: int) -> int:
+    mut slot = key + "#prev"
+    mut seen = it.state_get(slot + "#seen", 0)
+    mut prev = it.state_get(slot, current)
+    it.state_set(slot, current)
+    it.state_set(slot + "#seen", 1)
+    if seen == 0:
+        return current
+    return prev
+
+# --- useMemo ---------------------------------------------------------------
+#
+# Caches one int against a dep. `compute` is not taken as a function (same
+# reason as above) -- instead the caller checks whether recomputation is
+# needed, computes if so, and stores:
+#
+#     if use_memo_stale(it, "K:total", item_count):
+#         set_memo(it, "K:total", expensive_sum(items))
+#     mut total = use_memo(it, "K:total", 0)
+pub def use_memo_stale(it: Interpreter, key: str, dep: int) -> bool:
+    return use_effect(it, key + "#memo", dep)
+
+pub def use_memo(it: Interpreter, key: str, initial: int) -> int:
+    return it.state_get(key + "#memoval", initial)
+
+pub def set_memo(it: Interpreter, key: str, value: int) -> void:
+    it.state_set(key + "#memoval", value)
+
+# --- useReducer ------------------------------------------------------------
+#
+# A reducer is an INTERFACE implementation rather than a function value --
+# the same choice `EventHandler` makes, and for the same reason: interface
+# vtable dispatch works on every tier including freestanding, while calling a
+# stored function value historically did not.
+pub interface Reducer:
+    def reduce(self, state: int, action: int) -> int
+
+# Unlike use_state, this WRITES `initial` when the key is unset, rather than
+# just returning it. It has to: `dispatch` takes no initial value, so if the
+# first dispatch arrives before the slot exists it would reduce from 0
+# instead of from `initial` -- silently, and only for the first action.
+#
+# That asymmetry mirrors React, where useReducer(reducer, initialArg)
+# establishes the state at mount and dispatch only ever transforms what is
+# already there. use_state needs no equivalent because every read passes the
+# same default, so an unwritten slot and a written one agree.
+pub def use_reducer(it: Interpreter, key: str, initial: int) -> int:
+    mut slot = key + "#init"
+    if it.state_get(slot, 0) == 0:
+        it.state_set(key, initial)
+        it.state_set(slot, 1)
+    return it.state_get(key, initial)
+
+pub def dispatch(it: Interpreter, key: str, r: Reducer, action: int) -> int:
+    mut cur = it.state_get(key, 0)
+    mut next = r.reduce(cur, action)
+    it.state_set(key, next)
+    return next
+
+# --- animation -------------------------------------------------------------
+#
+# Not a React hook -- there is no useTransition equivalent for a value that
+# eases toward a target over frames -- but it belongs beside the others
+# because it is the same store and the same keying, and because reaching for
+# `Interpreter.anim_toward` directly is the thing this module exists to make
+# unnecessary.
+pub def use_spring(it: Interpreter, key: str, target: int, step: int) -> int:
+    return it.anim_toward(key + "#anim", target, step)
