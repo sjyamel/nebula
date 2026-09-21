@@ -51,8 +51,12 @@ def usage() -> void:
     print("nebula -- a cross-platform GUI engine")
     print("")
     print("  nebula init <name>         scaffold a new project")
+    print("      --routing folder       routes discovered from app/<route>/page.nbl")
+    print("                             (the default; Next.js-style)")
+    print("      --routing explicit     routes listed in nebula.conf's `pages =`")
     print("  nebula build --<target>    generate the entry point and compile")
     print("  nebula run   --<target>    build, then launch it")
+    print("  nebula routes              print the resolved route table")
     print("  nebula targets             list the platforms")
     print("")
     print("targets: " + all_target_names())
@@ -82,13 +86,29 @@ def fail(s: str) -> void:
 
 # --- init --------------------------------------------------------------
 
-def scaffold_conf(name: str) -> str:
+def scaffold_conf(name: str, folder_routing: bool) -> str:
     mut s = "# nebula.conf -- one key = value per line, # for comments.\n"
     s = s + "name    = " + name + "\n"
     s = s + "width   = 900\n"
     s = s + "height  = 560\n"
     s = s + "page_dir = app\n"
-    s = s + "pages   = home\n"
+    if folder_routing:
+        s = s + "\n"
+        s = s + "# Folder-based routing: every directory under page_dir that holds a\n"
+        s = s + "# page.nbl is a route, named after the directory. Add a route with\n"
+        s = s + "#   mkdir app/settings   +   app/settings/page.nbl\n"
+        s = s + "# and nothing here needs editing. `nebula routes` prints the table.\n"
+        s = s + "#\n"
+        s = s + "# `home` (then `index`) loads first if present, otherwise the\n"
+        s = s + "# alphabetically first route. Override with e.g. `initial = login`.\n"
+        s = s + "routing = folder\n"
+    else:
+        s = s + "\n"
+        s = s + "# Explicit routing: these are the routes, in this order, and the\n"
+        s = s + "# first one loads first. Switch to `routing = folder` to have them\n"
+        s = s + "# discovered from the directory layout instead.\n"
+        s = s + "routing = explicit\n"
+        s = s + "pages   = home\n"
     s = s + "bg      = #0F172A\n"
     return s
 
@@ -112,20 +132,31 @@ def scaffold_home_nbl() -> str:
     s = s + "</panel>\n"
     return s
 
-def scaffold_home_tr() -> str:
-    mut s = "# Handlers for app/home/home.nbl.\n"
+def scaffold_home_tr(page_file: str) -> str:
+    mut s = "# Handlers for app/home/" + page_file + ".nbl.\n"
     s = s + "#\n"
-    s = s + "# The contract is one function: `register_all(it)`. Nebula never scans this\n"
-    s = s + "# file for handler names -- a convention the compiler checks beats a regex\n"
-    s = s + "# that guesses -- so anything you want reachable from markup has to be\n"
-    s = s + "# registered here. A page may also export `on_frame(canvas, w, h, mx, my,\n"
-    s = s + "# buttons, key, wheel)`, called every frame while this page is active, for\n"
-    s = s + "# anything the markup tree alone can't draw (see cli/codegen.tr's header).\n"
+    s = s + "# The contract is one function: `register_all(it, router)`. Nebula never\n"
+    s = s + "# scans this file for handler names -- a convention the compiler checks\n"
+    s = s + "# beats a regex that guesses -- so anything you want reachable from markup\n"
+    s = s + "# has to be registered here. The `router` is passed so a handler can\n"
+    s = s + "# navigate (router.navigate(\"settings\", {})); ignore it if this page has\n"
+    s = s + "# nowhere to go.\n"
+    s = s + "#\n"
+    s = s + "# A page may also export `on_frame(canvas, w, h, mx, my, buttons, key,\n"
+    s = s + "# wheel)`, called every frame while this page is active, for anything the\n"
+    s = s + "# markup tree alone can't draw (see cli/codegen.tr's header).\n"
+    s = s + "#\n"
+    s = s + "# NOTE on naming: an app with TWO OR MORE pages that each define one of\n"
+    s = s + "# these must name them `<route>_register_all` / `<route>_on_frame`\n"
+    s = s + "# instead of the plain names -- see cli/codegen.tr's long comment on why\n"
+    s = s + "# (aliased imports of several same-named functions used to collapse onto\n"
+    s = s + "# one symbol). A single-page app is safe with the plain name.\n"
     s = s + "#\n"
     s = s + "# A handler is a class implementing EventHandler rather than a function,\n"
     s = s + "# which also gives it somewhere to keep state.\n\n"
     s = s + "from toolkit.types import Event, EventHandler\n"
-    s = s + "from toolkit.ui.interp import Interpreter, register_handler\n\n"
+    s = s + "from toolkit.ui.interp import Interpreter, register_handler\n"
+    s = s + "from toolkit.ui.router import Router\n\n"
     s = s + "pub class Say implements EventHandler:\n"
     s = s + "    pub label: str\n\n"
     s = s + "extend Say:\n"
@@ -135,14 +166,14 @@ def scaffold_home_tr() -> str:
     s = s + "        return h\n\n"
     s = s + "    pub def handle(self, e: Event) -> void:\n"
     s = s + "        print(\"[handler] \" + self.label + \" at (\" + e.x.to_str() + \",\" + e.y.to_str() + \")\")\n\n"
-    s = s + "pub def register_all(it: Interpreter) -> void:\n"
+    s = s + "pub def register_all(it: Interpreter, router: Router) -> void:\n"
     s = s + "    register_handler(it, \"on_ok\", Say.init(\"OK\"))\n"
     s = s + "    register_handler(it, \"on_cancel\", Say.init(\"CANCEL\"))\n"
     return s
 
-def cmd_init(name: str) -> int:
+def cmd_init(name: str, folder_routing: bool) -> int:
     if name == "":
-        fail("usage: nebula init <name>")
+        fail("usage: nebula init <name> [--routing folder|explicit]")
         return 1
 
     mut root = Dir.init(name)
@@ -155,18 +186,44 @@ def cmd_init(name: str) -> int:
     mut home = Dir.init(name + "/app/home")
     home.make()
 
-    File.write_text(name + "/nebula.conf", scaffold_conf(name))
-    File.write_text(name + "/app/home/home.nbl", scaffold_home_nbl())
-    File.write_text(name + "/app/home/home.tr", scaffold_home_tr())
+    # The file NAME is what differs between the two modes, not the content.
+    # Folder routing names every page file `page.nbl` and lets the directory
+    # carry the route name (Next.js's convention, and the reason a route can
+    # be renamed by renaming one directory). Explicit routing keeps the
+    # original `<route>/<route>.nbl`, which reads better in an editor tab
+    # strip when several pages are open at once.
+    mut nbl = name + "/app/home/page.nbl"
+    mut tr = name + "/app/home/page.tr"
+    if not folder_routing:
+        nbl = name + "/app/home/home.nbl"
+        tr = name + "/app/home/home.tr"
+
+    mut page_file = "page"
+    if not folder_routing:
+        page_file = "home"
+    File.write_text(name + "/nebula.conf", scaffold_conf(name, folder_routing))
+    File.write_text(nbl, scaffold_home_nbl())
+    File.write_text(tr, scaffold_home_tr(page_file))
 
     say("created " + name + "/")
     say("  nebula.conf")
-    say("  app/home/home.nbl    the UI, as data")
-    say("  app/home/home.tr     handlers, via register_all(it)")
-    say("")
-    say("add another page: mkdir app/settings, write app/settings/settings.nbl")
-    say("+.tr, then add it to nebula.conf's `pages = home, settings` line and")
-    say("navigate to it (toolkit.ui.router.Router.navigate) from any handler.")
+    if folder_routing:
+        say("  app/home/page.nbl    the UI, as data")
+        say("  app/home/page.tr     handlers, via register_all(it)")
+        say("")
+        say("routing = folder. Add a page with:")
+        say("  mkdir app/settings   then write app/settings/page.nbl (+ page.tr)")
+        say("It becomes a route immediately -- nothing to register. Check with:")
+        say("  nebula routes")
+    else:
+        say("  app/home/home.nbl    the UI, as data")
+        say("  app/home/home.tr     handlers, via register_all(it)")
+        say("")
+        say("routing = explicit. Add a page with:")
+        say("  mkdir app/settings, write app/settings/settings.nbl (+ .tr), then")
+        say("  add it to nebula.conf's `pages = home, settings` line.")
+    say("Navigate between routes with toolkit.ui.router.Router.navigate from")
+    say("any handler.")
     say("")
     say("next:")
     say("  cd " + name)
@@ -885,6 +942,152 @@ def do_run(cfg: Config, target: int) -> bool:
 
 # Accepts `--web`, `-web` or a bare `web`, because all three are things
 # people type and none of them is ambiguous.
+# --- folder-based routing -------------------------------------------------
+#
+# The Next.js model: the filesystem IS the route table. A directory under
+# page_dir that contains a page file is a route, named after the directory.
+# Adding a route is `mkdir app/settings` plus a `page.nbl` -- there is no
+# list to remember to update, which is the whole point.
+#
+# `routing = explicit` in nebula.conf opts back into the original `pages =`
+# list. That is not a legacy mode: an explicit list is the only way to pin
+# route ORDER (which decides the initial route), to keep a directory around
+# that is deliberately not routable yet, or to make a build independent of
+# directory listing.
+
+# Routes in a stable, deterministic order. Directory listing order is not
+# guaranteed across filesystems, and the route order decides which page
+# loads first, so this sorts rather than trusting Dir.list().
+def discover_routes(cfg: Config) -> List[str]:
+    mut found: List[str] = []
+    mut base = Dir.init(cfg.page_dir)
+    if not base.exists():
+        return found
+
+    mut entries = base.list()
+    mut i = 0
+    while i < len(entries):
+        # A page file under either naming convention makes a directory a
+        # route; anything else under page_dir (a `components/` folder, a
+        # stray file) is silently not one, same "unrecognized input is
+        # ignored, never fatal" policy the style vocabulary uses.
+        mut nm = entries[i]
+        if cfg.page_exists(nm):
+            found.append(nm)
+        i = i + 1
+
+    return sorted_names(found)
+
+# Selection sort that APPENDS rather than storing into the list, because
+# `List[str]` index assignment does not compile at all (bugs.txt #12) --
+# which rules out every in-place sort written the obvious way. A parallel
+# List[bool] marks what has already been taken; bool elements assign fine,
+# it is specifically the str element store that is broken.
+#
+# Quadratic, and that is fine: this sorts route names, of which there are a
+# handful.
+def sorted_names(items: List[str]) -> List[str]:
+    mut out: List[str] = []
+    mut n = len(items)
+    mut taken: List[bool] = []
+    mut t = 0
+    while t < n:
+        taken.append(false)
+        t = t + 1
+
+    mut picked = 0
+    while picked < n:
+        mut best = 0 - 1
+        mut i = 0
+        while i < n:
+            if not taken[i]:
+                if best < 0 or str_gt(items[best], items[i]):
+                    best = i
+            i = i + 1
+        taken[best] = true
+        mut nm = items[best]
+        out.append(nm)
+        picked = picked + 1
+    return out
+
+# `x > y` for route names, ASCII, byte-wise. Only used by the sort above.
+def str_gt(x: str, y: str) -> bool:
+    mut nx = Str.len(x)
+    mut ny = Str.len(y)
+    mut n = nx
+    if ny < n:
+        n = ny
+    mut i = 0
+    while i < n:
+        mut cx = Str.char_at(x, i)
+        mut cy = Str.char_at(y, i)
+        if cx != cy:
+            return cx > cy
+        i = i + 1
+    return nx > ny
+
+# Returns `routes` with `name` first, order otherwise preserved; unchanged
+# if `name` is not present. Rebuilds rather than swapping in place, for the
+# same reason sorted_names() does (bugs.txt #12).
+def promoted(routes: List[str], name: str) -> List[str]:
+    mut present = false
+    mut i = 0
+    while i < len(routes):
+        if routes[i] == name:
+            present = true
+        i = i + 1
+    if not present:
+        return routes
+
+    mut out: List[str] = []
+    out.append(name)
+    mut j = 0
+    while j < len(routes):
+        mut nm = routes[j]
+        if nm != name:
+            out.append(nm)
+        j = j + 1
+    return out
+
+# Fills cfg.pages from the filesystem when routing is folder-based, leaving
+# it exactly as configured when it is explicit. Everything downstream --
+# load_pages(), initial_page(), the generated router table -- already reads
+# cfg.pages and needs no idea which mode produced it.
+#
+# Returns false (with a message already printed) when there is nothing to
+# build, since "no routes" is a project mistake worth naming rather than an
+# empty router to debug later.
+pub def resolve_routes(cfg: Config) -> bool:
+    if cfg.routing != "folder":
+        return true
+
+    mut routes = discover_routes(cfg)
+    if len(routes) == 0:
+        fail("no routes found under " + cfg.page_dir + "/")
+        say("  folder routing expects a directory per route, each holding a")
+        say("  page file:  " + cfg.page_dir + "/home/page.nbl")
+        say("  (or the original " + cfg.page_dir + "/home/home.nbl -- both work)")
+        say("")
+        say("  to list routes explicitly instead, add to nebula.conf:")
+        say("    routing = explicit")
+        say("    pages   = home, settings")
+        return false
+
+    # Which route loads first. An explicit `initial =` wins; otherwise
+    # prefer the conventional entry-point names before falling back to
+    # alphabetical, so a project does not have to care that `about` sorts
+    # ahead of `home`.
+    if cfg.initial != "":
+        routes = promoted(routes, cfg.initial)
+    else:
+        # `home` wins over `index` when both exist, so promote index first
+        # and let home move ahead of it.
+        routes = promoted(routes, "index")
+        routes = promoted(routes, "home")
+
+    cfg.pages = routes
+    return true
+
 def parse_target(arg: str) -> int:
     mut a = arg
     while Str.starts_with(a, "-"):
@@ -903,6 +1106,44 @@ def main():
         usage()
         return
 
+    # Prints the resolved route table: which mode produced it, the order
+    # (so the initial route is visible), and the page file each route
+    # actually resolved to. Worth its own command because both naming
+    # conventions are accepted and discovery is implicit -- "why is this
+    # route missing" and "why did THAT one load first" should be answerable
+    # without reading the generated entry point.
+    if cmd == "routes":
+        mut rcfg = load_config("nebula.conf")
+        if not rcfg.ok:
+            fail(rcfg.err)
+            return
+        if not resolve_routes(rcfg):
+            Process.exit(1)
+            return
+        say("routing = " + rcfg.routing + "   page_dir = " + rcfg.page_dir)
+        say("")
+        mut ri = 0
+        while ri < len(rcfg.pages):
+            mut mark = "   "
+            if ri == 0:
+                mark = " * "
+            # Re-read the name from the list before EACH use rather than
+            # holding it in one local across all three. page_tr()/page_nbl()
+            # both call File.read_text internally, and a str read out of a
+            # collection does not reliably survive an intervening allocation
+            # (bugs.txt #11's shape). Holding it once made the second call
+            # receive an empty name and print `app//.nbl` -- while the first
+            # call, from the same local, was correct.
+            mut handler = rcfg.page_tr(rcfg.pages[ri])
+            if File.read_text(handler) == "":
+                handler = "(no handler)"
+            mut markup = rcfg.page_nbl(rcfg.pages[ri])
+            say(mark + rcfg.pages[ri] + "  ->  " + markup + "   " + handler)
+            ri = ri + 1
+        say("")
+        say(" * = initial route")
+        return
+
     if cmd == "targets":
         say("targets: " + all_target_names())
         return
@@ -911,7 +1152,33 @@ def main():
         mut name = ""
         if nargs > 2:
             name = _tr_get_arg(2)
-        Process.exit(cmd_init(name))
+        # `--routing folder|explicit`, folder being the default. A flag
+        # rather than an interactive prompt on purpose: `nebula init` has to
+        # stay usable from a script or a CI step, and a prompt that blocks
+        # on stdin would break both. Also accepts the bare `--folder` /
+        # `--explicit` shorthands, since those are what people type.
+        mut folder_routing = true
+        mut ai = 3
+        while ai < nargs:
+            mut a = _tr_get_arg(ai)
+            if a == "--explicit":
+                folder_routing = false
+            elif a == "--folder":
+                folder_routing = true
+            elif a == "--routing":
+                if ai + 1 < nargs:
+                    mut v = _tr_get_arg(ai + 1)
+                    if v == "explicit":
+                        folder_routing = false
+                    elif v == "folder":
+                        folder_routing = true
+                    else:
+                        fail("unknown routing mode '" + v + "' -- expected folder or explicit")
+                        Process.exit(1)
+                        return
+                    ai = ai + 1
+            ai = ai + 1
+        Process.exit(cmd_init(name, folder_routing))
         return
 
     if cmd == "build" or cmd == "run":
@@ -926,6 +1193,9 @@ def main():
         mut cfg = load_config("nebula.conf")
         if not cfg.ok:
             fail(cfg.err)
+            return
+        if not resolve_routes(cfg):
+            Process.exit(1)
             return
         mut ok = false
         if cmd == "build":

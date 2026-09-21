@@ -603,3 +603,51 @@ context on why nebula's own code is still written this way)
   Interpreters instead of reusing one across two render() calls, and its
   state-persistence check uses pattern (a) explicitly -- left as-is since
   it was always the right design, not merely a bug workaround.
+
+
+--------------------------------------------------------------------------
+#12  `List[str]` index ASSIGNMENT does not compile -- generated C assigns
+     `char *` to a `TrStr`
+--------------------------------------------------------------------------
+SEVERITY  Medium -- a hard compile error, so nothing silently breaks, but
+          the error names generated C rather than the Tauraro line, and the
+          same syntax on `List[int]` is documented as working (CLAUDE.md,
+          "List[T] supports index assignment (px[i] = v) -- the framebuffer
+          depends on this"), so it reads as a supported operation.
+TARGETS   Default (C) backend, hosted. Not tested on other backends.
+STATUS    Open. Worked around in cli/nebula.tr (see WORKAROUND).
+
+REPRO
+  def main():
+      mut ints: List[int] = [1, 2, 3]
+      ints[0] = 99                  # fine
+      mut strs: List[str] = ["a", "b", "c"]
+      mut tmp = strs[1]
+      strs[0] = tmp                 # does not compile
+      print(strs[0])
+
+OBSERVED
+  build/main.c:19:57: error: assigning to 'TrStr' from incompatible type
+  'char *'
+  1 error generated.
+
+  Binding the right-hand side to a local first (as above) does NOT help --
+  this is the ASSIGNMENT side, not the argument-wrapping path that #9 was.
+
+CAUSE (inferred, not confirmed in the compiler source)
+  The element-store path emits the raw `char *` payload where the list's
+  slot type is the wrapped `TrStr`. `List[int]` is unaffected because its
+  element type needs no wrapper.
+
+WHY IT MATTERS
+  It rules out in-place algorithms on string lists -- any sort, swap,
+  reverse or rotate written the obvious way. Found writing an insertion
+  sort over route names for folder-based routing; four assignments, four
+  identical errors.
+
+WORKAROUND
+  Build a NEW list instead of mutating in place. A selection sort that
+  appends the remaining minimum on each pass needs no element store (a
+  parallel `List[bool]` tracks what has been taken -- bool elements assign
+  fine, same as int). Slower on paper, irrelevant for the handful of items
+  this shape usually involves.

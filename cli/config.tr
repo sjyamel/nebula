@@ -44,6 +44,34 @@ pub class Config:
     pub height:   int
     pub page_dir: str        # base directory pages live under
     pub pages:    List[str]  # page names; pages[0] is the initial route
+    # "folder" (the default, and what `nebula init` writes) or "explicit".
+    #
+    # folder   -- routes are DISCOVERED by scanning page_dir for
+    #             subdirectories that contain a page file. Adding a route is
+    #             `mkdir app/settings` plus a page.nbl; nothing else to edit.
+    #             This is the Next.js model: the filesystem IS the route
+    #             table. `pages =` is ignored (and need not be present).
+    # explicit -- routes are exactly the `pages =` list, in that order. Use
+    #             this to pin route ORDER (which decides the initial route),
+    #             to ship a directory that is deliberately not routable yet,
+    #             or when a build must not depend on directory listing.
+    pub routing:  str
+    # Optional override for which discovered route loads first. Only
+    # consulted in folder mode -- explicit mode already has an order, so
+    # pages[0] answers it there. Empty means "use the default preference"
+    # (see initial_page()).
+    pub initial:  str
+    # Whether the conf file actually CONTAINED these keys, as opposed to
+    # inheriting their defaults. Needed because the default for `routing`
+    # cannot be a constant: a project written before folder routing existed
+    # has a `pages =` list and no `routing =` line, and silently switching
+    # it to discovery would reorder its routes (and therefore change which
+    # one loads first). So the rule is "an explicit `pages =` with no
+    # explicit `routing =` means explicit routing" -- resolved in
+    # load_config() once the whole file has been read, since a single
+    # apply_line() cannot know what other lines exist.
+    pub routing_set: bool
+    pub pages_set:   bool
     pub bg:       str        # page background, as a #RRGGBB literal
     # nebula1.0 Phase 3: `width`/`height` are the INITIAL size on every
     # target and the ONLY size on hosted/desktop/uefi/bare (there is no
@@ -83,6 +111,10 @@ extend Config:
         c.height = 560
         c.page_dir = "app"
         c.pages = ["home"]
+        c.routing = "folder"
+        c.initial = ""
+        c.routing_set = false
+        c.pages_set = false
         c.bg = "#0F172A"
         c.fixed_size = false
         c.assets = ""
@@ -95,11 +127,40 @@ extend Config:
     pub def to_str(self) -> str:
         return self.name + " " + self.width.to_str() + "x" + self.height.to_str() + " pages=" + Str.join(self.pages, ",")
 
+    # Two naming conventions are accepted, and which one a page uses is
+    # decided per-page by what is actually on disk rather than by a config
+    # switch:
+    #
+    #   app/<route>/page.nbl     Next.js-style -- the FOLDER names the route,
+    #                            the file is always called `page`. What
+    #                            `nebula init` scaffolds now.
+    #   app/<route>/<route>.nbl  the original convention. Still supported so
+    #                            examples/dashboard and any existing project
+    #                            keep building untouched.
+    #
+    # Preferring `page.nbl` when BOTH exist is arbitrary but has to be
+    # decided somewhere; a project with both for one route is a mistake
+    # either way, and `nebula routes` prints the resolved path so it is
+    # visible rather than mysterious.
     pub def page_nbl(self, name: str) -> str:
+        mut nextjs = self.page_dir + "/" + name + "/page.nbl"
+        if File.read_text(nextjs) != "":
+            return nextjs
         return self.page_dir + "/" + name + "/" + name + ".nbl"
 
     pub def page_tr(self, name: str) -> str:
+        mut nextjs = self.page_dir + "/" + name + "/page.tr"
+        if File.read_text(nextjs) != "":
+            return nextjs
         return self.page_dir + "/" + name + "/" + name + ".tr"
+
+    # True when this route has a markup file under either convention --
+    # the test folder-routing discovery uses to decide whether a directory
+    # under page_dir is a route at all.
+    pub def page_exists(self, name: str) -> bool:
+        if File.read_text(self.page_dir + "/" + name + "/page.nbl") != "":
+            return true
+        return File.read_text(self.page_dir + "/" + name + "/" + name + ".nbl") != ""
 
     pub def initial_page(self) -> str:
         if len(self.pages) == 0: return "home"
@@ -141,7 +202,15 @@ def apply_line(c: Config, line: str) -> void:
             mut p = Str.trim(parts[i])
             if p != "": cleaned.append(p)
             i = i + 1
-        if len(cleaned) > 0: c.pages = cleaned
+        if len(cleaned) > 0:
+            c.pages = cleaned
+            c.pages_set = true
+    elif key == "routing":
+        if val == "folder" or val == "explicit":
+            c.routing = val
+            c.routing_set = true
+    elif key == "initial":
+        c.initial = val
     elif key == "bg":
         c.bg = val
     elif key == "fixed_size":
@@ -163,6 +232,17 @@ pub def load_config(path: str) -> Config:
     while i < len(lines):
         apply_line(c, lines[i])
         i = i + 1
+
+    # Back-compat rule, deliberately not a constant default: a project
+    # written before folder routing existed lists its routes in `pages =`
+    # and says nothing about `routing`. Treating that as folder routing
+    # would re-derive its route table by directory listing -- same set of
+    # routes, but alphabetical, which silently changes which one loads
+    # first. So an explicit `pages =` with no explicit `routing =` keeps
+    # the old behaviour, and folder routing is what a project GETS by
+    # saying nothing at all (or by saying `routing = folder`).
+    if c.pages_set and not c.routing_set:
+        c.routing = "explicit"
     return c
 
 # --- targets ---------------------------------------------------------------
