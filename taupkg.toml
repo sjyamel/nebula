@@ -1,0 +1,41 @@
+# taupkg manifest for Nebula.
+#
+# `taupkg init` wrote the working-directory PATH as the package name and
+# pointed `bin` at a `src/main.tr` this repo does not have; both are
+# corrected below. The engine itself is a library (toolkit/), and the one
+# binary is the CLI.
+#
+# Useful commands, all of which set TAURARO_PATH for you -- which is the
+# reason to go through taupkg rather than calling tauraroc directly:
+#
+#   taupkg build            build cli/nebula.tr -> nebula.exe
+#   taupkg run -- routes    build it and run `nebula routes`
+#   taupkg env              print the TAURARO_PATH line, to run tauraroc by hand
+#   taupkg tree             show the resolved dependency graph
+
+[package]
+name    = "nebula"
+version = "0.1.0"
+desc    = "A cross-platform GUI engine with its own declarative UI syntax"
+license = "MIT"
+bin     = "cli/nebula.tr"
+
+[deps]
+# tausvg -- rasterizes an `.svg` asset in-process, used by the CLI's
+# `bake_images()` when a project declares `assets = ...` (see
+# cli/nebula.tr's own import comment).
+#
+# NOT DECLARED YET, because it cannot currently be resolved from anywhere:
+#   * the default registry host (registry.taupkg.dev) does not resolve in
+#     DNS, so `taupkg search`/`add` fail with HTTP 0;
+#   * there is no `tausvg` repo under github.com/tauraro or the
+#     collaborator's account;
+#   * and nothing named tausvg exists on this machine.
+#
+# So `cli/nebula.tr` currently builds only where tausvg already happens to
+# be installed. Once its location is known, one of these lines is the fix
+# (taupkg takes Cargo-style inline-table sources):
+#
+#   tausvg = "^0.1"                                        # registry, once up
+#   tausvg = { git = "https://github.com/<owner>/tausvg" }  # from git
+#   tausvg = { path = "../tausvg" }                         # local checkout
