@@ -44,3 +44,9 @@ demo-app/
 # The Tauraro defect log is source, not build output -- the blanket *.txt
 # rule above would otherwise silently swallow it (it did, once).
 !bugs.txt
+
+# taupkg's local package cache -- git clones of every resolved dependency.
+# Reproducibility comes from taupkg.lock (which pins each package to an
+# exact commit plus a sha256 and IS committed), not from vendoring the
+# clones themselves.
+.taupkg/

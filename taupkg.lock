@@ -1,0 +1,10 @@
+# taupkg lock file -- do not edit manually
+# It records the exact resolved dependency graph. Commit it for reproducible builds.
+
+[[pkg]]
+name       = "tausvg"
+version    = "0.1.0"
+constraint = "*"
+source     = "git:https://github.com/Yusee-Programmer/tausvg@5b0800dfb212bc0793315d2ad7469149d8d99def"
+checksum   = "sha256:e9e01e144d5c614bd68ca9985bfdb846ed6148f4336e3e85d089779816969cbf"
+

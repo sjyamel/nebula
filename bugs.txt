@@ -651,3 +651,59 @@ WORKAROUND
   parallel `List[bool]` tracks what has been taken -- bool elements assign
   fine, same as int). Slower on paper, irrelevant for the handful of items
   this shape usually involves.
+
+
+--------------------------------------------------------------------------
+#13  taupkg: `install --locked` cannot restore a git dependency -- it
+     clones the locked COMMIT as if it were a BRANCH
+--------------------------------------------------------------------------
+SEVERITY  Medium -- `--locked` is the reproducible-build path (CI, a fresh
+          clone, an audited rebuild) and it is exactly the path that fails.
+          Plain `install` works, so the damage is "reproducibility is not
+          actually available", not "nothing installs".
+TOOL      taupkg v0.0.2 (NOT tauraroc -- first non-compiler entry in this
+          file; recorded here because it is part of the same toolchain and
+          this is where toolchain defects get looked up).
+STATUS    Open. Worked around by using plain `taupkg install`.
+
+REPRO
+  # taupkg.toml
+  [deps]
+  tausvg = { git = "https://github.com/Yusee-Programmer/tausvg", branch = "master" }
+
+  taupkg install          # succeeds, writes taupkg.lock
+  rm -rf .taupkg          # simulate a fresh clone
+  taupkg install --locked
+
+OBSERVED
+  Cloning into '.../.taupkg/packages/tausvg'...
+  fatal: Remote branch 5b0800dfb212bc0793315d2ad7469149d8d99def not found
+         in upstream origin
+  error: git clone failed for tausvg
+  error: failed to resolve 'tausvg' (*) requested by (root)
+
+CAUSE
+  taupkg.lock correctly records the resolved revision as a commit:
+
+    source = "git:https://github.com/.../tausvg@5b0800df...d99def"
+
+  but the restore path appears to pass whatever follows `@` to
+  `git clone --branch`, and `--branch` accepts only a branch or tag name,
+  never a raw commit SHA. So the more precisely the lock pins a revision,
+  the more certainly the restore fails.
+
+  The correct shape is clone-then-checkout: `git clone <url>` followed by
+  `git checkout <sha>` (or `git fetch origin <sha>` + checkout for a
+  server that allows fetching arbitrary SHAs).
+
+WHY IT IS NASTY
+  The error names a "branch" the user never wrote anywhere -- the SHA
+  appears only inside a generated lock file -- so it reads as a corrupt
+  manifest rather than a restore bug.
+
+WORKAROUND
+  Use plain `taupkg install` (no `--locked`). It resolves from the
+  `branch = ...` in taupkg.toml, succeeds from a clean cache, and leaves
+  taupkg.lock unchanged when the branch head still matches. The cost is
+  that a moving branch head is no longer pinned, which is the guarantee
+  `--locked` was supposed to provide.

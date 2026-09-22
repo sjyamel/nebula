@@ -33,7 +33,18 @@ bin     = "cli/nebula.tr"
 # currently has nothing to fetch.
 
 [deps]
-# (empty -- see [features].svg below for why tausvg is not here)
+# Pure-Tauraro SVG-subset rasterizer, used by cli/nebula.tr's bake_images()
+# to turn an `.svg` under a project's `assets = ...` into a baked RGBA
+# module at build time. No system/native dependency -- which is the reason
+# it exists rather than shelling out to a converter.
+#
+# `branch = "master"` is explicit because that is the repo's default and
+# taupkg should not have to guess (and because a later switch to `main`
+# would otherwise silently change what gets resolved).
+#
+# PNG/JPG assets do NOT go through this -- they use scripts/bake-image.ps1's
+# GDI+ pipeline and need no package at all.
+tausvg = { git = "https://github.com/Yusee-Programmer/tausvg", branch = "master" }
 
 # --- optional features -----------------------------------------------------
 #
