@@ -1,41 +1,86 @@
 # taupkg manifest for Nebula.
 #
-# `taupkg init` wrote the working-directory PATH as the package name and
-# pointed `bin` at a `src/main.tr` this repo does not have; both are
-# corrected below. The engine itself is a library (toolkit/), and the one
-# binary is the CLI.
-#
-# Useful commands, all of which set TAURARO_PATH for you -- which is the
-# reason to go through taupkg rather than calling tauraroc directly:
-#
-#   taupkg build            build cli/nebula.tr -> nebula.exe
+#   taupkg install          fetch + build every dependency below
+#   taupkg build            build cli/nebula.tr -> the `nebula` CLI
 #   taupkg run -- routes    build it and run `nebula routes`
 #   taupkg env              print the TAURARO_PATH line, to run tauraroc by hand
 #   taupkg tree             show the resolved dependency graph
+#
+# Going through taupkg rather than calling tauraroc directly is worth it for
+# one reason above all: `build`/`run`/`test` set TAURARO_PATH themselves.
+# Getting that wrong by hand is what makes a checkout fail to build with an
+# error naming a symbol rather than a missing package.
 
 [package]
 name    = "nebula"
 version = "0.1.0"
-desc    = "A cross-platform GUI engine with its own declarative UI syntax"
+desc    = "A cross-platform GUI engine with its own declarative UI syntax, written in Tauraro"
 license = "MIT"
 bin     = "cli/nebula.tr"
 
+# --- dependencies ----------------------------------------------------------
+#
+# Nebula's external surface is deliberately tiny. Every import across
+# toolkit/, cli/ and examples/ resolves to one of:
+#
+#   toolkit.*                    this repo
+#   cli.* / app.*                this repo / the user's own app
+#   string, io, core, sys, math  the Tauraro stdlib, shipped inside tauraroc
+#   tausvg                       the ONLY third-party package  <-- below
+#
+# That is the whole list, taken from the imports rather than from memory.
+# Nothing else needs declaring, and `taupkg install` on a fresh clone
+# currently has nothing to fetch.
+
 [deps]
-# tausvg -- rasterizes an `.svg` asset in-process, used by the CLI's
-# `bake_images()` when a project declares `assets = ...` (see
-# cli/nebula.tr's own import comment).
+# (empty -- see [features].svg below for why tausvg is not here)
+
+# --- optional features -----------------------------------------------------
 #
-# NOT DECLARED YET, because it cannot currently be resolved from anywhere:
-#   * the default registry host (registry.taupkg.dev) does not resolve in
-#     DNS, so `taupkg search`/`add` fail with HTTP 0;
-#   * there is no `tausvg` repo under github.com/tauraro or the
-#     collaborator's account;
-#   * and nothing named tausvg exists on this machine.
+# SVG assets. `cli/nebula.tr`'s bake_images() rasterizes an `.svg` under a
+# project's `assets = ...` directory in-process, via tausvg. PNG/JPG assets
+# do NOT go through this -- they use scripts/bake-image.ps1's GDI+ pipeline
+# and need no package at all.
 #
-# So `cli/nebula.tr` currently builds only where tausvg already happens to
-# be installed. Once its location is known, one of these lines is the fix
-# (taupkg takes Cargo-style inline-table sources):
+# NOT ENABLED BY DEFAULT, and not in [deps], because tausvg cannot be
+# resolved from anywhere today. Checked, rather than assumed:
 #
-#   tausvg = "^0.1"                                        # registry, once up
-#   tausvg = { git = "https://github.com/<owner>/tausvg" }  # from git
-#   tausvg = { path = "../tausvg" }                         # local checkout
+#   * taupkg's built-in registry host (registry.taupkg.dev) does not
+#     resolve in DNS, so `search`/`add` fail with HTTP 0;
+#   * `github.com/tauraro/tausvg` is 404 -- that org has .github, linguist,
+#     taupkg, tauraro, tauraro-docs, tauraro-grammar, vscode-tauraro;
+#   * the collaborator's account has taufs, taujson, taumigrate, tauopenssl,
+#     tauorm, taupostgres, tausqlite3 and templa -- the naming pattern
+#     exists, but no tausvg;
+#   * a GitHub-wide repository search for "tausvg" returns zero results;
+#   * and a recursive search of this machine finds nothing named tausvg.
+#
+# Declaring a git dep pointing at a URL that 404s would make `taupkg
+# install` fail for EVERY user, which is strictly worse than not declaring
+# it. So the line below is the intended shape, left commented until the
+# repo exists -- uncomment it and drop the `optional` to make SVG assets a
+# hard requirement, or enable it per-build with:
+#
+#     taupkg build --features svg
+#
+# [deps]
+# tausvg = { git = "https://github.com/Yusee-Programmer/tausvg", optional = true }
+#
+# [features]
+# svg = ["tausvg"]
+#
+# CONSEQUENCE while this stands: cli/nebula.tr imports tausvg
+# unconditionally, so the CLI builds only where tausvg already happens to
+# be installed. Verified as the single blocker -- with TAURARO_PATH unset,
+# the one error is `rasterize_svg_file` undefined at cli/nebula.tr:427.
+# Making that import conditional (so the CLI builds everywhere and SVG
+# baking degrades to a warning) is a code change, not a manifest one.
+
+# --- future ----------------------------------------------------------------
+#
+# templa (github.com/Yusee-Programmer/templa) is the project's chosen
+# templating engine -- see CLAUDE.md, where Jinja was proposed and
+# explicitly rejected in its favour. Intentionally NOT declared yet: no
+# module imports it, and a dependency nothing uses is one more thing to
+# install and keep current for no benefit. Add it in the same commit that
+# first imports it.

@@ -425,8 +425,23 @@ def bake_images(cfg: Config) -> bool:
             # `text-<color>` on TOP of a rendered asset the same way, so
             # a neutral baked default is the right call here too.
             mut res = rasterize_svg_file(srcPath, 128, 0)
-            write_baked_module(res, e.name, outTr)
-            print("bake-image (svg) " + e.rel + " -> " + outTr + " (" + res.w.to_str() + "x" + res.h.to_str() + ")")
+            # A FAILED rasterization must not overwrite a good baked asset.
+            #
+            # This used to write unconditionally, so a rasterizer that
+            # returned nothing (a malformed .svg, or a tausvg that could
+            # not load) replaced a perfectly good previously-baked module
+            # with a 0x0 one -- silently, and the app then rendered
+            # nothing where an icon used to be. Observed for real: a build
+            # against a stubbed tausvg blanked all nine of
+            # examples/dashboard's icons in one pass.
+            #
+            # Skipping instead means the worst case is a stale asset plus
+            # a warning, rather than a destroyed one.
+            if res.w <= 0 or res.h <= 0:
+                print("bake-image (svg) " + e.rel + " -> SKIPPED (rasterized to 0x0; keeping any existing " + outTr + ")")
+            else:
+                write_baked_module(res, e.name, outTr)
+                print("bake-image (svg) " + e.rel + " -> " + outTr + " (" + res.w.to_str() + "x" + res.h.to_str() + ")")
         else:
             # `-File` needs its own quotes: exe_dir() can contain spaces (a
             # user profile path like "Yusee Habibu"), and an unquoted -File
