@@ -1,0 +1,111 @@
+# verified-examples/widgets_batch1.tr — <spinner>, <skeleton>, <toggle>.
+#
+# Renders the three tags added in the React/shadcn parity pass, and asserts
+# the two things a screenshot cannot show:
+#
+#   * spinner and skeleton ANIMATE off the frame counter, so the same tree
+#     rendered at two different frame counts must produce DIFFERENT pixels.
+#     A static render proves nothing about either.
+#   * toggle LATCHES -- a click flips its state slot, and the slot is the
+#     same one a <checkbox> under that key would use.
+#
+#   tauraroc --run verified-examples/widgets_batch1.tr
+
+from toolkit.types import Event
+from toolkit.ui.parser import UiParser
+from toolkit.ui.interp import Interpreter, render_to
+from toolkit.render.hosted.buffer import BufferCanvas
+from toolkit.ui.hooks import use_bool
+
+mut _pass: int = 0
+mut _fail: int = 0
+
+def check(label: str, got: bool) -> void:
+    if got:
+        _pass = _pass + 1
+    else:
+        _fail = _fail + 1
+        print("  FAIL " + label)
+
+# Counts how many pixels differ between two canvases of the same size --
+# the "did this actually animate" test.
+def diff_count(a: BufferCanvas, b: BufferCanvas) -> int:
+    mut n = 0
+    mut y = 0
+    while y < a.height():
+        mut x = 0
+        while x < a.width():
+            if a.get_px(x, y) != b.get_px(x, y):
+                n = n + 1
+            x = x + 1
+        y = y + 1
+    return n
+
+# Clicks the ITALIC toggle. A free function taking the Interpreter rather
+# than an inline dispatch, so the coordinate lives in exactly one place.
+def it_click_italic(it: Interpreter) -> void:
+    it.dispatch(Event.click(140, 250))
+
+def source() -> str:
+    return "<panel \"flex-col p-6 gap-5 bg-slate-900\">\n  <text \"text-slate-100\">BATCH 1 -- spinner / skeleton / toggle</text>\n\n  <panel \"flex-row gap-6 items-center h-12\">\n    <spinner \"text-sky-400 w-8 h-8\"/>\n    <spinner \"text-emerald-400 w-6 h-6\"/>\n    <text \"text-slate-400\">indeterminate progress</text>\n  </panel>\n\n  <panel \"flex-col gap-2\">\n    <skeleton \"w-full bg-slate-700 text-slate-500\"/>\n    <skeleton \"w-3/4 bg-slate-700 text-slate-500\"/>\n    <skeleton \"w-1/2 bg-slate-700 text-slate-500\"/>\n  </panel>\n\n  <panel \"flex-row gap-3 h-12\">\n    <toggle \"key-bold checked w-24 rounded-lg bg-slate-800 border border-slate-600 justify-center items-center\">\n      <text \"text-slate-100\">BOLD</text>\n    </toggle>\n    <toggle \"key-italic w-24 rounded-lg bg-slate-800 border border-slate-600 justify-center items-center\">\n      <text \"text-slate-100\">ITALIC</text>\n    </toggle>\n  </panel>\n</panel>\n"
+
+def main():
+    mut p = UiParser.init()
+    mut tree = p.parse(source())
+    p.report()
+
+    mut it = Interpreter.init()
+    it.root_bg = 0x0F172A
+
+    # --- frame 1 -----------------------------------------------------
+    mut c1 = BufferCanvas.init(560, 300, 0x0F172A)
+    render_to(it, tree, c1)
+
+    print("=== a tag's `checked` default lives on the BOX, not the store ===")
+    # Worth asserting because it is the opposite of what a React habit
+    # expects. `<toggle "checked">` does not seed the state slot -- emit
+    # reads `state_get(node_key, <the markup default>)` fresh every frame,
+    # so the slot stays UNSET until something actually writes it.
+    #
+    # The practical consequence, and the reason this is a test and not a
+    # comment: a hook reading that key before any interaction must pass the
+    # SAME default the markup did, or it will disagree with what is on
+    # screen. use_bool(it, "K:bold", false) reports false while the pixels
+    # show pressed.
+    check("slot unset, so hook's own default wins", not use_bool(it, "K:bold", false))
+    check("hook agrees once given the markup's default", use_bool(it, "K:bold", true))
+
+    print("=== toggle latches: a click WRITES the slot ===")
+    # On a SEPARATE Interpreter, so the screenshot below still shows one
+    # toggle pressed and one not -- clicking here would leave both pressed
+    # and make the rendered pair useless for eyeballing the two states.
+    mut clicker = Interpreter.init()
+    clicker.root_bg = 0x0F172A
+    mut c0 = BufferCanvas.init(560, 300, 0x0F172A)
+    render_to(clicker, tree, c0)
+    it_click_italic(clicker)
+    check("slot now set and agrees either way",
+          use_bool(clicker, "K:italic", false) == use_bool(clicker, "K:italic", true))
+
+    print("=== spinner and skeleton animate across frames ===")
+    # Advance the frame counter by rendering repeatedly, then compare a
+    # later frame against the first. Same tree, same size -- any pixel
+    # difference can only come from the frame-counter-driven animation.
+    mut i = 0
+    while i < 12:
+        mut scratch = BufferCanvas.init(560, 300, 0x0F172A)
+        render_to(it, tree, scratch)
+        i = i + 1
+    mut c2 = BufferCanvas.init(560, 300, 0x0F172A)
+    render_to(it, tree, c2)
+
+    mut changed = diff_count(c1, c2)
+    check("later frame differs from the first (" + changed.to_str() + " px)", changed > 0)
+
+    c2.save_ppm("verified-examples/out_widgets_batch1.ppm")
+    print("wrote verified-examples/out_widgets_batch1.ppm")
+
+    print("")
+    print("passed=" + _pass.to_str() + " failed=" + _fail.to_str())
+    if _fail == 0:
+        print("ALL OK")

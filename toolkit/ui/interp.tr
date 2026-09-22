@@ -20,6 +20,7 @@ from toolkit.render.clipped_canvas import clip_canvas
 from toolkit.render.renderer import Renderer
 from toolkit.render.software_renderer import default_renderer
 from toolkit.ui.widget_tags import tag_checkbox, tag_switch, tag_radio, tag_slider, tag_progress, tag_tabitem, tag_listitem, tag_dial, tag_gauge, tag_iconring, tag_icon, tag_textinput, tag_image, tag_collapse, tag_label, tag_hr, tag_link, tag_tooltip, is_widget_tag
+from toolkit.ui.widget_tags import tag_spinner, tag_skeleton, tag_toggle
 from toolkit.ui.trig import sin1000, cos1000
 from toolkit.text.font import Font, Fonts
 from string.str import Str
@@ -870,6 +871,107 @@ extend Interpreter:
         if box.tag == tag_hr():
             scene.add(Cmd.rounded_rect(box.x, box.y, box.w, box.h, 0, box.style.fg, ambient_bg))
             return ambient_bg
+
+        # Batch 1 (`<spinner/>`): indeterminate progress, where `<progress>`
+        # shows a known fraction. Eight dots on a circle, their brightness
+        # trailing off behind a head that advances one position per few
+        # frames.
+        #
+        # Phase comes from `self.renders` -- the frame counter -- NOT from
+        # per-node state, for two reasons: every spinner on screen then
+        # turns in unison (several out of phase reads as jitter, not
+        # motion), and an indeterminate spinner has no per-node value worth
+        # keying, so it costs no state slot at all.
+        if box.tag == tag_spinner():
+            mut sp_r = box.w
+            if box.h < sp_r:
+                sp_r = box.h
+            sp_r = sp_r / 2
+            if sp_r > 0:
+                mut sp_cx = box.x + box.w / 2
+                mut sp_cy = box.y + box.h / 2
+                mut dot_r = sp_r / 4
+                if dot_r < 1:
+                    dot_r = 1
+                # One eighth-turn every 4 frames.
+                mut head = (self.renders / 4) % 8
+                mut k = 0
+                while k < 8:
+                    # How far behind the head this dot is, 0..7.
+                    mut behind = (head - k + 8) % 8
+                    # Brightest at the head, fading to nearly the backdrop.
+                    mut cov = 16 - behind * 2
+                    if cov < 2:
+                        cov = 2
+                    mut dot_col = mix_color(box.style.fg, ambient_bg, cov)
+                    # sin1000/cos1000 are fixed-point (x1000) integer trig --
+                    # this toolkit has no float on the freestanding tiers.
+                    mut ring_r = sp_r - dot_r
+                    mut deg = k * 45
+                    mut dx = (cos1000(deg) * ring_r) / 1000
+                    mut dy = (sin1000(deg) * ring_r) / 1000
+                    scene.add(Cmd.circle(sp_cx + dx, sp_cy + dy, dot_r, dot_col, ambient_bg))
+                    k = k + 1
+            return ambient_bg
+
+        # Batch 1 (`<skeleton/>`): a loading placeholder that pulses. A
+        # static grey box is already expressible; the pulse is the part
+        # that is not, and it is what distinguishes "still loading" from
+        # "loaded, and empty".
+        #
+        # Driven off the frame counter like spinner, and for the same
+        # reason -- a wall of skeletons should breathe together.
+        if box.tag == tag_skeleton():
+            mut base = box.style.bg
+            if base == unset():
+                base = mix_color(box.style.fg, ambient_bg, 5)
+            # A triangle wave over 60 frames: 0..15..0, so the pulse eases
+            # at both ends instead of snapping back.
+            mut ph = self.renders % 60
+            if ph > 30:
+                ph = 60 - ph
+            mut lift = mix_color(box.style.fg, base, ph / 4)
+            mut sk_radius = box.style.radius
+            if sk_radius <= 0:
+                sk_radius = box.h / 2
+            scene.add(Cmd.rounded_rect(box.x, box.y, box.w, box.h, sk_radius, lift, ambient_bg))
+            return ambient_bg
+
+        # Batch 1 (`<toggle>`): a button that latches pressed. Same state
+        # shape as checkbox (one 0/1 slot at node_key, `checked` to start
+        # pressed) -- only the painting differs, and deliberately so: a
+        # switch reads as a setting, a toggle reads as a toolbar button,
+        # and using one where the other belongs is a real UI mistake.
+        #
+        # Returns the FILL as the new ambient so its children's own
+        # antialiasing blends against what it actually painted, exactly
+        # like an ordinary panel with a background does.
+        if box.tag == tag_toggle():
+            mut tg_on = self.state_get(box.node_key, b2i(box.w_checked)) != 0
+            mut tg_fill = box.style.bg
+            if tg_fill == unset():
+                tg_fill = ambient_bg
+            if tg_on:
+                # Pressed: the accent if the author gave one
+                # (`sel-<color>`, the same token tabitem/listitem use for
+                # their selected fill), otherwise a LIFT OFF ITS OWN FILL --
+                # not off `ambient`, and not a wash of `fg`.
+                #
+                # Blending from ambient looked plausible and rendered
+                # badly: with no `text-` token the default fg is nearly
+                # white, so an unstyled pressed toggle came out pale grey
+                # and lost all relation to the unpressed one beside it.
+                # Lifting its own background keeps the pair obviously the
+                # same control in two states, at any theme.
+                tg_fill = box.w_sel_bg
+                if tg_fill == unset():
+                    tg_fill = mix_color(box.style.fg, tg_fill, 5)
+            mut tg_radius = box.style.radius
+            if box.style.border != unset() and box.style.border_w > 0:
+                scene.add(Cmd.rounded_box(box.x, box.y, box.w, box.h, tg_radius, box.style.border_w, tg_fill, box.style.border, ambient_bg))
+            else:
+                scene.add(Cmd.rounded_rect(box.x, box.y, box.w, box.h, tg_radius, tg_fill, ambient_bg))
+            return tg_fill
 
         # nebula1.0 Phase 4 (baked images): `src-<name>` (parsed into
         # box.w_name, same field icon-<name> already populates) selects
@@ -2570,6 +2672,12 @@ pub def hit_test_widget(it: Interpreter, root: LayoutBox, box: LayoutBox, x: int
         return true
 
     if box.tag == tag_switch():
+        it.state_toggle(box.node_key, b2i(box.w_checked))
+        return true
+
+    # Batch 1 (`<toggle>`): identical latching to checkbox -- same state
+    # slot, same default. Only the painting differs (see emit_widget).
+    if box.tag == tag_toggle():
         it.state_toggle(box.node_key, b2i(box.w_checked))
         return true
 

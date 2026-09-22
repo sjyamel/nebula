@@ -179,6 +179,63 @@ pub def tag_link() -> str:
 pub def tag_tooltip() -> str:
     return "tooltip"
 
+# React/shadcn parity, batch 1 (2026-09-21). Three tags chosen because each
+# adds a capability markup could NOT already express, rather than because a
+# reference library happens to name them:
+#
+#   spinner   indeterminate progress. `<progress>` shows a KNOWN fraction;
+#             there was no way to say "working, duration unknown", which is
+#             the more common case for a network call.
+#   skeleton  a loading placeholder that pulses. Composable as a static
+#             grey box already -- the animation is the part that isn't.
+#   toggle    a button that stays pressed. Distinct from `<switch>`: a
+#             switch is a settings affordance reading on/off, a toggle is a
+#             toolbar affordance reading active/inactive, and they are not
+#             visually interchangeable.
+#
+# Deliberately NOT added as tags, because each is pure composition that the
+# existing vocabulary already covers and a tag would only shorten:
+#   badge     <panel "px-2 py-0.5 rounded-full bg-sky-500"><text>..</text>
+#   card      <panel "p-4 rounded-xl bg-slate-800 border border-slate-600">
+#   alert     a card with an <icon> and a border colour
+#   separator <hr/>
+# Adding a tag costs three files (this one, flex.tr's sizing, interp.tr's
+# emit) and a permanent vocabulary entry; shortening a one-line composition
+# does not earn that.
+
+# Indeterminate progress: a rotating arc. Animated off `Interpreter`'s own
+# frame counter rather than a stored angle, so several spinners stay in
+# phase and none needs per-node state. `text-<color>` tints it, the same
+# convention icon/hr already use.
+pub def tag_spinner() -> str:
+    return "spinner"
+
+# A loading placeholder whose fill pulses between its own `bg-` colour and
+# a lighter tint of it. Sized like any other box (`w-`/`h-`/`grow`), so a
+# skeleton of a paragraph is three of these at different widths.
+pub def tag_skeleton() -> str:
+    return "skeleton"
+
+# A press-latching button. Shares checkbox's state shape exactly (`checked`
+# to start pressed, `key-<name>` for identity, one state slot holding 0/1),
+# and differs only in how it PAINTS: the whole box fills when active rather
+# than a small box next to a caption. Children lay out and paint normally
+# on top, so `<toggle "checked"><text>Bold</text></toggle>` is the usual
+# shape.
+#
+# `sel-<color>` sets the pressed fill (the same token tabitem/listitem
+# already use for their selected state). Without it, pressed is a lift off
+# the toggle's own `bg-`, so an unstyled pair still reads as one control in
+# two states.
+#
+# NOTE, and it surprises people arriving from React: `checked` is a default
+# carried on the BOX, not a write into the state store. The slot stays
+# unset until something actually clicks, so a hook reading that key before
+# any interaction must pass the same default the markup did -- see
+# verified-examples/widgets_batch1.tr, which asserts exactly this.
+pub def tag_toggle() -> str:
+    return "toggle"
+
 # True for any widget tag -- used by dispatch() to decide whether a click
 # needs the widget-state-mutation path at all before falling through to the
 # ordinary handler-allowlist dispatch.
@@ -203,6 +260,12 @@ pub def is_widget_tag(tag: str) -> bool:
     # tokens on an auto-overlay box) so they are deliberately NOT here --
     # see this function's own header comment on what membership means.
     if tag == tag_hr(): return true
+    # Batch 1: spinner and skeleton paint their own decoration (and so must
+    # be here for emit_widget to reach them) but take no clicks; toggle
+    # both paints and latches on click, exactly like checkbox.
+    if tag == tag_spinner(): return true
+    if tag == tag_skeleton(): return true
+    if tag == tag_toggle(): return true
     return false
 
 # Same two one-line helpers toolkit/ui/style.tr's own token parsing uses

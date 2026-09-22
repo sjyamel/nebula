@@ -20,6 +20,7 @@
 from toolkit.ui.ast import UiNode, read_node, max_depth
 from toolkit.ui.style import Style, StyleCache, dir_col, dir_grid, unset
 from toolkit.ui.widget_tags import tag_checkbox, tag_switch, tag_radio, tag_slider, tag_progress, tag_dial, tag_icon, tag_textinput, tag_image, tag_collapse, tag_hr, tag_tooltip
+from toolkit.ui.widget_tags import tag_spinner, tag_skeleton, tag_toggle
 from toolkit.ui.style import align_stretch, align_center, align_end, align_between
 from toolkit.ui.style import align_around, align_evenly
 from toolkit.ui.style import font_size_sm, font_size_lg
@@ -321,6 +322,13 @@ def widget_intrinsic_h(tag: str) -> int:
     if tag == tag_image(): return 48
     # hr: a thin 2px divider bar by default, overridable with `h-N`.
     if tag == tag_hr(): return 2
+    # Batch 1. spinner is square-ish at icon scale; skeleton defaults to a
+    # single text line's height so a placeholder paragraph lines up with
+    # the real text it stands in for; toggle matches textinput's row height
+    # so the two sit level in a toolbar.
+    if tag == tag_spinner(): return 24
+    if tag == tag_skeleton(): return 14
+    if tag == tag_toggle(): return 36
     return 0
 
 def is_measured_widget_tag(tag: str) -> bool:
@@ -334,6 +342,13 @@ def is_measured_widget_tag(tag: str) -> bool:
     if tag == tag_textinput(): return true
     if tag == tag_image(): return true
     if tag == tag_hr(): return true
+    # Batch 1. spinner and skeleton are leaves with an intrinsic size.
+    # toggle is deliberately NOT here: it is a CONTAINER (its children lay
+    # out and paint on top of its fill), so it must measure from its
+    # content like any panel, with widget_intrinsic_h only supplying a
+    # floor when it has none.
+    if tag == tag_spinner(): return true
+    if tag == tag_skeleton(): return true
     return false
 
 # nebula1.0 Phase 4 (collapse): 0 if `key` was never written, matching
