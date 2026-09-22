@@ -43,17 +43,27 @@ bin     = "cli/nebula.tr"
 # and need no package at all.
 #
 # NOT ENABLED BY DEFAULT, and not in [deps], because tausvg cannot be
-# resolved from anywhere today. Checked, rather than assumed:
+# resolved from anywhere today. The intended home is
+# github.com/Yusee-Programmer/tausvg; as of 2026-09-22 that repository
+# does not exist yet. Checked, rather than assumed:
 #
-#   * taupkg's built-in registry host (registry.taupkg.dev) does not
-#     resolve in DNS, so `search`/`add` fail with HTTP 0;
-#   * `github.com/tauraro/tausvg` is 404 -- that org has .github, linguist,
-#     taupkg, tauraro, tauraro-docs, tauraro-grammar, vscode-tauraro;
-#   * the collaborator's account has taufs, taujson, taumigrate, tauopenssl,
-#     tauorm, taupostgres, tausqlite3 and templa -- the naming pattern
-#     exists, but no tausvg;
+#   * `git ls-remote https://github.com/Yusee-Programmer/tausvg` ->
+#     "Repository not found";
+#   * that is NOT an access problem. The same command against the sibling
+#     package `Yusee-Programmer/templa` succeeds from this machine with
+#     the same credentials, so a private repo the local git account could
+#     see would have resolved. It is unpushed, not hidden;
+#   * `tauraro/tausvg` is 404 too, as are tau-svg / tausvg2 / svg /
+#     tauimage / taugfx under both accounts;
 #   * a GitHub-wide repository search for "tausvg" returns zero results;
+#   * taupkg's registry host (registry.taupkg.dev) does not resolve in
+#     DNS, so search/add fail with HTTP 0 and cannot supply it either;
 #   * and a recursive search of this machine finds nothing named tausvg.
+#
+# TO ENABLE, once the repo is pushed -- uncomment the two blocks below and:
+#
+#     taupkg install
+#     taupkg build            # or: taupkg build --features svg
 #
 # Declaring a git dep pointing at a URL that 404s would make `taupkg
 # install` fail for EVERY user, which is strictly worse than not declaring
