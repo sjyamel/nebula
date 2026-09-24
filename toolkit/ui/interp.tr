@@ -136,6 +136,17 @@ pub class Interpreter:
     # than crashing on an unset interface field.
     pub image_painter: ImagePainter
     pub has_image_painter: bool
+    # nebula1.0 (`dismiss-outside`): the collapse key a handler
+    # toggled DURING the click currently being dispatched, or "".
+    # Cleared at the top of every dispatch() and set by
+    # CollapseToggleHandler, purely so the outside-click pass can
+    # tell "the user clicked the trigger" apart from "the user
+    # clicked away". Without it, clicking a closed dropdown's own
+    # trigger would open it (the handler) and then immediately close
+    # it again (the dismiss pass, since a trigger sits OUTSIDE the
+    # collapse box it controls) -- the dropdown would never appear
+    # to open at all.
+    pub last_toggle_key: str
     # nebula1.0 Phase 4 (`<link>`): same has_image_painter-style guard --
     # a target that never calls register_url_opener() (bare-metal/UEFI,
     # any hosted example that never uses `<link>`) leaves `<link>` a safe
@@ -172,6 +183,7 @@ extend Interpreter:
         it.text_state = {}
         it.focused_key = ""
         it.has_image_painter = false
+        it.last_toggle_key = ""
         it.url_opener = default_url_opener()
         it.has_url_opener = false
         it.overlays = []
@@ -1158,6 +1170,9 @@ extend Interpreter:
         if wanted == "":
             return false
 
+        # Per-event, not per-frame: see Interpreter.last_toggle_key.
+        self.last_toggle_key = ""
+
         # nebula1.0 Phase 3 (real text input): a focused textinput eats
         # every key event itself (typing, not a handler) -- checked BEFORE
         # the old global "first @on_key anywhere" scan below, which stays
@@ -1195,19 +1210,32 @@ extend Interpreter:
             # still get both (the toggle AND the handler) from one click.
             hit_test_widget(self, self.root, self.root, e.x, e.y, 0, false)
             name = hit_test(self.root, e.x, e.y, 0, wanted, false)
-        if name == "":
-            return false
+        mut handled = false
+        if name != "":
+            # Linear scan of the allowlist. A handful of handlers makes a
+            # hash table pointless, and a name with no slot is ignored on
+            # purpose.
+            mut i = 0
+            while i < len(self.handlers):
+                mut slot = self.handlers[i]
+                if slot.name == name:
+                    slot.h.handle(e)
+                    handled = true
+                    i = len(self.handlers)
+                else:
+                    i = i + 1
 
-        # Linear scan of the allowlist. A handful of handlers makes a hash
-        # table pointless, and a name with no slot is ignored on purpose.
-        mut i = 0
-        while i < len(self.handlers):
-            mut slot = self.handlers[i]
-            if slot.name == name:
-                slot.h.handle(e)
-                return true
-            i = i + 1
-        return false
+        # nebula1.0 (`dismiss-outside`): runs AFTER the handler, and on
+        # every pointer click whether or not one matched -- a click on
+        # empty background matches nothing at all, and that is exactly
+        # the click that has to close an open dropdown. Running it after
+        # the handler is what makes the trigger work: by this point the
+        # trigger's own toggle has already flipped the state and left
+        # its key in last_toggle_key, so the two never fight.
+        if e.kind != ev_key():
+            if dismiss_outside_collapses(self, self.root, e.x, e.y, 0):
+                handled = true
+        return handled
 
     pub def stats(self) -> str:
         return "Interpreter(renders=" + self.renders.to_str() + " handlers=" + len(self.handlers).to_str() + ") " + self.cache.stats()
@@ -3007,6 +3035,57 @@ extend CollapseToggleHandler:
 
     pub def handle(self, e: Event) -> void:
         self.it.state_toggle(self.key, 0)
+        # See Interpreter.last_toggle_key for why this is recorded.
+        self.it.last_toggle_key = self.key
+
+# nebula1.0 (`dismiss-outside`): close every OPEN collapse carrying the
+# `dismiss-outside` token that this click landed outside of. Returns
+# whether it closed anything, so dispatch() can report the click as
+# handled (a click that dismisses a menu is consumed by that menu, and
+# should not also read as a click on the background).
+#
+# A free function, not a method, for the reason this file already
+# documents twice over: a recursive private method hung on the
+# freestanding tier once (see hit_test's own header), and every
+# tree-walking helper here has been a free function since.
+#
+# Three guards, each load-bearing:
+#
+#   * `state_get(...) != 0` reads the LIVE state rather than
+#     box.collapse_open, which is a snapshot from the last LAYOUT and
+#     is therefore stale by exactly one event here -- the handler that
+#     just ran may have changed it microseconds ago. Reading the stale
+#     copy would close a collapse the user just clicked shut anyway,
+#     and (worse) reopen nothing while reporting the click handled.
+#   * `node_key != last_toggle_key` spares the collapse whose own
+#     trigger was clicked -- a trigger sits OUTSIDE the box it
+#     controls, so without this every dropdown would close on the same
+#     click that opened it. (A trigger wired to something other than
+#     CollapseToggleHandler leaves no breadcrumb and so is not spared;
+#     such a trigger wants `dismiss-outside` left off.)
+#   * `w > 0 and h > 0` skips a collapse wrapping an `overlay` child.
+#     Such a collapse is deliberately ZERO-SIZED (see hit_test's own
+#     tag_collapse() comment and flex.tr's collapse_natural_h), so
+#     "outside its box" would be EVERYWHERE, including on the dialog
+#     itself -- a modal would close the instant the user clicked its
+#     own title. Modals close via their backdrop panel's @on_click
+#     instead, which is a real full-screen node and already works.
+pub def dismiss_outside_collapses(it: Interpreter, box: LayoutBox, x: int, y: int, depth: int) -> bool:
+    if depth > max_depth():
+        return false
+    mut closed = false
+    if box.tag == tag_collapse() and box.style.dismiss_outside:
+        if box.w > 0 and box.h > 0:
+            if box.node_key != it.last_toggle_key:
+                if it.state_get(box.node_key, 0) != 0 and not box.contains(x, y):
+                    it.state_set(box.node_key, 0)
+                    closed = true
+    mut i = 0
+    while i < len(box.children):
+        if dismiss_outside_collapses(it, box.children[i], x, y, depth + 1):
+            closed = true
+        i = i + 1
+    return closed
 
 # Same free-function-for-upcast reasoning as register_handler just above --
 # see ImagePainter's own comment for what this wires up and why.

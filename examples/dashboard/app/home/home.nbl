@@ -193,7 +193,7 @@
             <text "text-slate-700">Active room: Living Room</text>
             <text "text-slate-400">v</text>
           </panel>
-          <collapse "key-roomdropdown">
+          <collapse "key-roomdropdown dismiss-outside">
             <panel "flex-col border-t border-slate-100 p-2 gap-1">
               <panel "flex-row items-center gap-3 p-2 rounded-lg">
                 <radio "group-droproom value-0 w-4 h-4"/>

@@ -337,17 +337,22 @@ def gen_hosted(cfg: Config, pages: List[PageInfo]) -> str:
     mut s = banner(cfg, "hosted")
     s = s + "from io.file import File\n"
     s = s + "from toolkit.ui.parser import UiParser\n"
-    s = s + "from toolkit.ui.interp import Interpreter, render_to\n"
+    s = s + "from toolkit.ui.interp import Interpreter, render_to, ImagePainter, register_image_painter\n"
     s = s + "from toolkit.ui.router import Router\n"
+    s = s + "from toolkit.render.scene import Scene, Cmd\n"
     s = s + "from toolkit.render.hosted.buffer import BufferCanvas\n"
     s = s + page_imports(cfg, pages)
+    s = s + image_imports(cfg)
     s = s + font_imports(cfg)
+    s = s + image_painter_class(cfg)
     s = s + "\ndef main():\n"
     s = s + router_setup(cfg, pages, true, "    ", true)
     s = s + "\n    mut it = Interpreter.init()\n"
     s = s + "    it.root_bg = " + hex_of(cfg.bg) + "\n"
     s = s + font_set_custom_call(cfg, "    ", "it")
     s = s + register_calls(pages, "    ", "it")
+    if len(cfg.images) > 0:
+        s = s + "    register_image_painter(it, AppImagePainter.init())\n"
     s = s + "    mut canvas = BufferCanvas.init(" + cfg.width.to_str() + ", " + cfg.height.to_str() + ", " + hex_of(cfg.bg) + ")\n"
     s = s + "    render_to(it, router.page({}), canvas)\n"
     s = s + on_frame_dispatch(pages, "    ", "canvas, " + cfg.width.to_str() + ", " + cfg.height.to_str() + ", -1, -1, 0, 0, 0")
@@ -361,19 +366,24 @@ def gen_desktop(cfg: Config, pages: List[PageInfo]) -> str:
     s = s + "from io.file import File\n"
     s = s + "from toolkit.types import Event\n"
     s = s + "from toolkit.ui.parser import UiParser\n"
-    s = s + "from toolkit.ui.interp import Interpreter, render_to, register_url_opener\n"
+    s = s + "from toolkit.ui.interp import Interpreter, render_to, register_url_opener, ImagePainter, register_image_painter\n"
     s = s + "from toolkit.ui.router import Router\n"
+    s = s + "from toolkit.render.scene import Scene, Cmd\n"
     s = s + "from toolkit.render.desktop.sdl_canvas import SdlCanvas, poll_event, last_click, mouse_state\n"
     s = s + "from toolkit.render.desktop.sdl_bindings import SDL_Delay, Uint32\n"
     s = s + "from toolkit.platform.native_browser import NativeUrlOpener\n"
     s = s + page_imports(cfg, pages)
+    s = s + image_imports(cfg)
     s = s + font_imports(cfg)
+    s = s + image_painter_class(cfg)
     s = s + "\ndef main():\n"
     s = s + router_setup(cfg, pages, true, "    ", true)
     s = s + "\n    mut it = Interpreter.init()\n"
     s = s + "    it.root_bg = " + hex_of(cfg.bg) + "\n"
     s = s + font_set_custom_call(cfg, "    ", "it")
     s = s + register_calls(pages, "    ", "it")
+    if len(cfg.images) > 0:
+        s = s + "    register_image_painter(it, AppImagePainter.init())\n"
     # nebula1.0 Phase 4 (`<link>`): a desktop window's own OS always has
     # SOME way to open a URL (Process.system("start ...") on this box's own
     # Windows target -- see toolkit.platform.browser's own header for the

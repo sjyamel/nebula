@@ -44,7 +44,7 @@
             <text "text-slate-700">Choose a plan</text>
             <text "text-slate-400">v</text>
           </panel>
-          <collapse "key-plandropdown">
+          <collapse "key-plandropdown dismiss-outside">
             <panel "flex-col gap-1 pt-2">
               <panel "flex-row items-center gap-3 p-1">
                 <radio "group-demoplan value-0 selected w-4 h-4"/>

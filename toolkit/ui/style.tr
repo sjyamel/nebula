@@ -231,6 +231,20 @@ pub class Style:
     # vertically, and vice versa).
     pub overlay_x: int
     pub overlay_y: int
+    # nebula1.0: `dismiss-outside` on a <collapse> -- a click that
+    # lands outside the open collapse's own box closes it, which is
+    # what every dropdown/menu/popover does and what a user means by
+    # "click away to close". Opt-in rather than the default because a
+    # <collapse> is equally an ACCORDION section, where clicking
+    # elsewhere on the page must emphatically NOT collapse it.
+    #
+    # Deliberately NOT how a modal closes: a modal built from
+    # collapse+overlay already has a full-screen backdrop panel
+    # carrying its own @on_click, and that backdrop is the thing the
+    # user clicks "outside" onto. See toolkit.ui.interp's
+    # dismiss_outside_collapses() for why such a collapse is skipped
+    # here (its own box is zero-sized, so "outside" is meaningless).
+    pub dismiss_outside: bool
 
 extend Style:
     pub def default() -> Style:
@@ -271,6 +285,7 @@ extend Style:
         s.overlay  = false
         s.overlay_x = unset()
         s.overlay_y = unset()
+        s.dismiss_outside = false
         return s
 
     pub def copy(self) -> Style:
@@ -311,6 +326,7 @@ extend Style:
         s.overlay  = self.overlay
         s.overlay_x = self.overlay_x
         s.overlay_y = self.overlay_y
+        s.dismiss_outside = self.dismiss_outside
         return s
 
     pub def to_str(self) -> str:
@@ -487,6 +503,9 @@ def apply_shadow_token(s: Style, token: str) -> bool:
 # policy this whole file already has), so there's no ordering requirement
 # between them and the `overlay` token itself within one class string.
 def apply_overlay_token(s: Style, token: str) -> bool:
+    if token == "dismiss-outside":
+        s.dismiss_outside = true
+        return true
     if token == "overlay":
         s.overlay = true
         return true

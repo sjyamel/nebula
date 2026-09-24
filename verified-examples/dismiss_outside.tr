@@ -1,0 +1,109 @@
+# verified-examples/dismiss_outside.tr — `dismiss-outside` on a <collapse>.
+#
+# The behaviour every dropdown has and this toolkit did not: clicking away
+# from an open menu closes it. Before this, the ONLY way to close a
+# <collapse> was to click its own trigger again — which is unreachable the
+# moment anything covers it, and is not what a user tries first anyway.
+#
+# Four cases, because the interesting part is not "does it close" but the
+# three ways a naive version breaks something that already worked:
+#
+#   1. click outside an open one          -> closes          (the feature)
+#   2. click the trigger of a CLOSED one  -> opens, STAYS open
+#      A trigger sits outside the box it controls, so a dismiss pass that
+#      ran blind would shut it on the very click that opened it.
+#   3. click INSIDE an open one           -> stays open
+#      Picking an item out of a menu must not dismiss the menu first.
+#   4. a collapse WITHOUT the token       -> unaffected
+#      Accordions are collapses too, and must not close when the user
+#      clicks elsewhere on the page.
+#
+#   tauraroc --run verified-examples/dismiss_outside.tr
+
+from toolkit.types import Event
+from toolkit.ui.ast import UiNode
+from toolkit.ui.parser import UiParser
+from toolkit.ui.interp import Interpreter, render_to, register_handler, CollapseToggleHandler
+from toolkit.render.hosted.buffer import BufferCanvas
+
+mut _pass: int = 0
+mut _fail: int = 0
+
+def check(label: str, got: bool) -> void:
+    if got:
+        _pass = _pass + 1
+    else:
+        _fail = _fail + 1
+        print("  FAIL " + label)
+
+# `menu` opts in; `acc` (the accordion) deliberately does not. Both start
+# closed, and each trigger is an ordinary panel ABOVE its own collapse --
+# the arrangement that makes case 2 a real risk rather than a theoretical
+# one. Fixed heights throughout so the y coordinates below are predictable:
+# trigger 0..40, menu body 40..136.
+def source() -> str:
+    return "<panel \"flex-col bg-slate-900 w-[400px] h-[400px]\">\n  <panel \"h-10 bg-slate-700\" @on_click(toggle_menu)>\n    <text \"text-white\">Choose a plan</text>\n  </panel>\n  <collapse \"key-menu dismiss-outside\">\n    <panel \"flex-col h-24 bg-slate-800\">\n      <text \"text-white\">Free</text>\n      <text \"text-white\">Pro</text>\n    </panel>\n  </collapse>\n  <panel \"h-10 bg-slate-700\" @on_click(toggle_acc)>\n    <text \"text-white\">Device settings</text>\n  </panel>\n  <collapse \"key-acc\">\n    <panel \"flex-col h-24 bg-slate-800\">\n      <text \"text-white\">Brightness</text>\n    </panel>\n  </collapse>\n</panel>\n"
+
+def is_open(it: Interpreter, key: str) -> bool:
+    return it.state_get(key, 0) != 0
+
+# Re-rendering between clicks is not optional: the dismiss pass tests a
+# click against the collapse's LAID-OUT box, so a collapse that has never
+# been laid out while open has no box to be outside of.
+def frame(it: Interpreter, tree: Pointer[UiNode], c: BufferCanvas) -> void:
+    render_to(it, tree, c)
+
+# Opens the accordion by probing downward rather than hardcoding a y the
+# layout could drift out from under -- its trigger's position depends on
+# how tall the menu above it happens to be at that moment.
+def open_accordion(it: Interpreter, tree: Pointer[UiNode], c: BufferCanvas) -> void:
+    mut y = 0
+    while y < 400 and not is_open(it, "K:acc"):
+        it.dispatch(Event.click(100, y))
+        frame(it, tree, c)
+        y = y + 4
+
+def main():
+    mut p = UiParser.init()
+    mut tree = p.parse(source())
+    p.report()
+
+    mut it = Interpreter.init()
+    it.root_bg = 0x0F172A
+    register_handler(it, "toggle_menu", CollapseToggleHandler.init(it, "K:menu"))
+    register_handler(it, "toggle_acc", CollapseToggleHandler.init(it, "K:acc"))
+
+    mut c = BufferCanvas.init(400, 400, 0x0F172A)
+    frame(it, tree, c)
+
+    print("=== 2. the trigger still opens it, and it STAYS open ===")
+    # The click a naive implementation breaks: the trigger is at y=20, the
+    # collapse it controls starts below it, so this click is literally
+    # outside the box it just opened.
+    it.dispatch(Event.click(100, 20))
+    check("trigger opened the menu", is_open(it, "K:menu"))
+    frame(it, tree, c)
+    check("menu still open after a re-render", is_open(it, "K:menu"))
+
+    print("=== 3. clicking inside the open menu leaves it open ===")
+    it.dispatch(Event.click(100, 70))
+    frame(it, tree, c)
+    check("menu survives a click on its own body", is_open(it, "K:menu"))
+
+    print("=== 1. clicking outside closes it ===")
+    # Bottom of the page, where no handler sits at all -- which is exactly
+    # the click dispatch()'s old early-return never reached.
+    it.dispatch(Event.click(200, 380))
+    check("menu closed by an outside click", not is_open(it, "K:menu"))
+
+    print("=== 4. a collapse without the token is unaffected ===")
+    open_accordion(it, tree, c)
+    check("accordion opened", is_open(it, "K:acc"))
+    it.dispatch(Event.click(380, 395))
+    frame(it, tree, c)
+    check("accordion ignored the outside click", is_open(it, "K:acc"))
+
+    print("")
+    print("passed=" + _pass.to_str() + " failed=" + _fail.to_str())
+    if _fail == 0:
+        print("ALL OK")
